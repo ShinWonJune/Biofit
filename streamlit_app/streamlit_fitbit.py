@@ -29,13 +29,14 @@ if st.button("🚀 데이터 수집·전처리 시작"):
         st.stop()
 
     # (3) 환경변수에 토큰 설정 (Data Service로 전달되도록)
-    os.environ["FITBIT_TOKEN"] = token.strip()
+    # os.environ["FITBIT_TOKEN"] = token.strip()
 
     # (4) 요청 페이로드 구성
     payload = {
         "uid": uid.strip(),
         "start_date": start_date.strftime("%Y-%m-%d"),
-        "end_date": end_date.strftime("%Y-%m-%d")
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "token": token.strip()
     }
 
     st.info("⏳ Data Service에 데이터 수집·전처리 요청 중...")

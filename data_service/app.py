@@ -11,6 +11,7 @@ class FetchRequest(BaseModel):
     uid: str
     start_date: str
     end_date: str
+    token: str 
 
 # 환경변수에서 DB URL과 (필요 시) FITBIT_TOKEN을 읽어옴
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -27,9 +28,10 @@ def fetch_and_preprocess(req: FetchRequest):
     uid = req.uid
     s = req.start_date
     e = req.end_date
+    token = req.token
 
     # 1) 환경변수로부터 FITBIT_TOKEN 확인
-    token = os.getenv(FITBIT_TOKEN_ENV)
+    # token = os.getenv(FITBIT_TOKEN_ENV)
     if not token:
         raise HTTPException(status_code=400, detail="FITBIT_TOKEN 환경변수가 없습니다.")
 

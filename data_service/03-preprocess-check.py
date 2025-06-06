@@ -23,7 +23,7 @@ num_cols = df.select_dtypes("number").columns.difference(key)
 df_mean = (df.groupby(key)[num_cols].mean().reset_index())
 
 
-IN  = "/app/fitbit_csv/daily_merged_nodup.csv"
+IN  = "/app/fitbit_csv/daily_merged_nodup.csv" 
 OUT = "/app/fitbit_csv/daily_merged_filled2.csv"
 
 # 1) 읽기 ─ 날짜형 변환 & 정렬

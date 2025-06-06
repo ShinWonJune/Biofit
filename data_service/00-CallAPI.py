@@ -17,10 +17,10 @@ from pathlib import Path
 CSV_DIR = Path("./fitbit_csv"); CSV_DIR.mkdir(exist_ok=True)
 MAX_CALLS_HOUR = 150
 SAFETY_MARGIN  = 10            # 140콜에서 자발 휴식
-token = os.getenv("FITBIT_TOKEN")
-if not token:
-    sys.exit("? FITBIT_TOKEN environment variable not found")
-HEADERS = {"Authorization": f"Bearer {token}"}
+# token = os.getenv("FITBIT_TOKEN")
+# if not token:
+#     sys.exit("? FITBIT_TOKEN environment variable not found")
+# HEADERS = {"Authorization": f"Bearer {token}"}
 
 calls_in_window = 0
 window_start    = time.time()
@@ -195,14 +195,16 @@ def get_hrv(uid, d):
 # 메인 루프
 ##########################################################################
 def main():
-    if len(sys.argv)!=4:
-        print("Usage: python fitbit_bulk_to_csv.py <USER_ID> <START_DATE> <END_DATE>")
+    if len(sys.argv) != 5:
+        print("Usage: python 00-CallAPI.py <USER_ID> <START_DATE> <END_DATE> <FITBIT_TOKEN>") # FITBIT_TOKEN을 arg로 받음
         sys.exit(1)
 
-    uid, s_date, e_date = sys.argv[1], sys.argv[2], sys.argv[3]
+    uid, s_date, e_date, token = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+    global HEADERS
+    HEADERS = {"Authorization": f"Bearer {token}"} 
     start = datetime.strptime(s_date,"%Y-%m-%d")
     end   = datetime.strptime(e_date,"%Y-%m-%d")
-
+    
     total_days = (end-start).days + 1
     print(f"[INFO] Starting collection for {total_days} days (estimated max ~{(total_days*9)/MAX_CALLS_HOUR:.1f} hours)")
 

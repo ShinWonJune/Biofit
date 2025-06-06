@@ -1,6 +1,7 @@
 import pandas as pd
+import numpy as np
 
-df = pd.read_csv("../../fitbit_csv/daily_merged.csv")
+df = pd.read_csv("/app/fitbit_csv/daily_merged.csv")
 
 # ── (A) user_id 가 있을 경우 ───────────────────────────────
 key = ["user_id", "date"] if "user_id" in df.columns else ["date"]
@@ -15,17 +16,15 @@ print(dupes.head())
 # A) 가장 마지막 행 남기기
 df_nodup = (df.sort_values("date")                   # 필요하다면 다른 컬럼 오름차순
               .drop_duplicates(subset=key, keep="last"))
-df_nodup.to_csv("../../fitbit_csv/daily_merged_nodup.csv", index=False)
+df_nodup.to_csv("/app/fitbit_csv/daily_merged_nodup.csv", index=False)
 
 # B) 수치 컬럼 평균내기
 num_cols = df.select_dtypes("number").columns.difference(key)
 df_mean = (df.groupby(key)[num_cols].mean().reset_index())
 
 
-import pandas as pd
-
-IN  = "/workspace/01-class/01.sleep_check/01-data/daily_merged_filled.csv"
-OUT = "/workspace/01-class/01.sleep_check/01-data/daily_merged_filled2.csv"
+IN  = "/app/fitbit_csv/daily_merged_nodup.csv"
+OUT = "/app/fitbit_csv/daily_merged_filled2.csv"
 
 # 1) 읽기 ─ 날짜형 변환 & 정렬
 df = pd.read_csv(IN, parse_dates=["date"])
@@ -47,12 +46,11 @@ df_filled.to_csv(OUT, index=False)
 print(f"✅ Missing value interpolation completed → {OUT}")
 
 
-import pandas as pd
-import numpy as np
 
-in_path = "/workspace/01-class/01.sleep_check/01-data/daily_merged_filled2.csv"
 
-out_path = "/workspace/01-class/01.sleep_check/01-data/daily_merged_filled2_filled.csv"
+in_path = "/app/fitbit_csv/daily_merged_filled2.csv"
+
+out_path = "/app/fitbit_csv/daily_merged_filled2_filled.csv"
 
 df = pd.read_csv(in_path)
 

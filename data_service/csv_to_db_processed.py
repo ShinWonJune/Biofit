@@ -12,8 +12,9 @@ engine = sqlalchemy.create_engine(DATABASE_URL)
 
 # 전처리 결과 두 개의 CSV 경로
 PROC_CSVS = [
-    Path("daily_merged_filled-origin.csv"),
-    Path("daily_merged_filled2_filled.csv")
+    Path("/app/fitbit_csv/daily_merged_filled_nodup.csv"),
+    Path("/app/fitbit_csv/daily_merged_filled2_filled.csv"),
+    Path("/app/fitbit_csv/daily_merged_filled2.csv")
 ]
 
 def load_processed_csv_to_db():

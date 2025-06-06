@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from functools import reduce
 
-DATA_DIR = Path("../../fitbit_csv")          # Colab / 로컬 환경에 맞게 바꿔 주세요
+DATA_DIR = Path("/app/fitbit_csv")          # Colab / 로컬 환경에 맞게 바꿔 주세요
 OUT_FILE = DATA_DIR / "daily_merged.csv"
 
 

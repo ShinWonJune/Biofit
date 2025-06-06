@@ -95,9 +95,9 @@ def main(src_dir: Path, out_csv: Path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--src_dir", default="fitbit_csv", type=Path,
+    parser.add_argument("--src_dir", default="/app/fitbit_csv", type=Path,
                         help="Folder containing original csv files")
-    parser.add_argument("--out_csv", default="daily_biometrics.csv", type=Path,
+    parser.add_argument("--out_csv", default="/app/daily_biometrics.csv", type=Path,
                         help="Path to save daily csv file")
     args = parser.parse_args()
     main(args.src_dir, args.out_csv)

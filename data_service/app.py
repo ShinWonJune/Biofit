@@ -28,10 +28,10 @@ def fetch_and_preprocess(req: FetchRequest):
     uid = req.uid
     s = req.start_date
     e = req.end_date
-    token = req.token
+    token = req.token # streamlit에서 입력받은 토큰
+    os.environ['FITBIT_TOKEN'] = token
 
-    # 1) 환경변수로부터 FITBIT_TOKEN 확인
-    # token = os.getenv(FITBIT_TOKEN_ENV)
+    # token = os.getenv(FITBIT_TOKEN_ENV) 
     if not token:
         raise HTTPException(status_code=400, detail="FITBIT_TOKEN 환경변수가 없습니다.")
 
@@ -41,8 +41,7 @@ def fetch_and_preprocess(req: FetchRequest):
             ["python3", "00-CallAPI.py", uid, s, e],
             check=True,
             capture_output=True,
-            text=True,
-            env={**os.environ, "FITBIT_TOKEN": token}
+            text=True
         )
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"00-CallAPI 실패: {e.stderr}")

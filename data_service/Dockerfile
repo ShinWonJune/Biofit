@@ -15,7 +15,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # 애플리케이션 복사
-COPY app.py /app/app.py
+COPY . /app
 
 # Fitbit CSV를 저장할 디렉터리 생성
 RUN mkdir -p /app/fitbit_csv

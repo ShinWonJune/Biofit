@@ -4,14 +4,20 @@ import glob
 import pandas as pd
 import sqlalchemy
 from pathlib import Path
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 # 반드시 환경변수에서 DATABASE_URL을 읽어야 함
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL 환경변수가 설정되지 않았습니다.")
 
 engine = sqlalchemy.create_engine(DATABASE_URL)
-CSV_DIR = Path("/app/fitbit_csv")  # FITBIT CSV가 이 위치에 저장됨
+
+CSV_DIR = Path("./fitbit_csv")  # FITBIT CSV가 이 위치에 저장됨
 
 # CSV 파일명 별로 DB 테이블명을 지정할 수 있다.
 # 예: heart_rate_1min.csv → uid_heart_rate_1min

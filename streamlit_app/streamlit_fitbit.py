@@ -66,5 +66,5 @@ if st.button("🚀 데이터 수집·전처리 시작"):
     st.success(data.get("message", "데이터 수집·전처리 완료"))
 
     # (6) 처리된 데이터가 DB에 모두 저장된 상태이므로, 여기서 추가 작업(조회·시각화 등)을 할 수 있음.
-    st.info("✅ Raw·Processed 데이터가 DB에 저장되었습니다.")
+    st.info("✅ 데이터가 DB에 저장되었습니다.")
     st.write("이제 AI 서비스 또는 다른 로직을 호출할 수 있습니다.")

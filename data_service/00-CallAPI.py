@@ -5,20 +5,30 @@ import os, sys, time, json, requests
 from datetime import datetime, timedelta
 import pandas as pd
 from pathlib import Path
-import pdb;
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
 
 ##########################################################################
 # 기본 설정
 ##########################################################################
 CSV_DIR = Path("./fitbit_csv"); CSV_DIR.mkdir(exist_ok=True)
+logging.info(f"fitbit_csv 디렉토리 생성완료")
 MAX_CALLS_HOUR = 150
 SAFETY_MARGIN  = 10            # 140콜에서 자발 휴식
 token = os.getenv("FITBIT_TOKEN")
-pdb.set_trace()
+
+token = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyM1JLM1MiLCJzdWIiOiIzTDRMTVoiLCJpc3MiOiJGaXRiaXQiLCJ0eXAiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZXMiOiJyc29jIHJhY3QgcnNldCBybG9jIHJ3ZWkgcmhyIHJwcm8gcm51dCByc2xlIiwiZXhwIjoxNzc5MjY2NTAxLCJpYXQiOjE3NDc3MzA1MDF9.pI_Tuvic9ICeq6d_d1Hm8u6eVPDfbHUTFXmspOJhDWE"
+
+# pdb.set_trace()
 if not token:
     sys.exit("? FITBIT_TOKEN environment variable not found")
 HEADERS = {"Authorization": f"Bearer {token}"}
-
+logging.info(f"HEADERS 등록 완료")
 calls_in_window = 0
 window_start    = time.time()
 

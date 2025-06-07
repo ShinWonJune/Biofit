@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:13
+    container_name: biofit-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: biofit
+      POSTGRES_PASSWORD: biofitpass
+      POSTGRES_DB: biofitdb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  data:
+    build:
+      context: ./data_service
+      dockerfile: Dockerfile
+    container_name: biofit-data-service
+    depends_on:
+      - db
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      # (필요하다면 FITBIT_TOKEN 기본값을 여기 두고, Streamlit에서 덮어쓸 수 있음)
+    volumes:
+      - ./data_service:/app
+    ports:
+      - "8001:8001"
+
+  streamlit:
+    build:
+      context: ./streamlit_app
+      dockerfile: Dockerfile
+    container_name: biofit-streamlit
+    depends_on:
+      - db
+      - data
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      DATA_SERVICE_URL: http://data:8001/fetch
+    volumes:
+      - ./streamlit_app:/app
+    ports:
+      - "8501:8501"
+
+volumes:
+  db_data:

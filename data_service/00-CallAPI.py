@@ -5,7 +5,7 @@ import os, sys, time, json, requests
 from datetime import datetime, timedelta
 import pandas as pd
 from pathlib import Path
-
+import pdb;
 
 ##########################################################################
 # 기본 설정
@@ -14,6 +14,7 @@ CSV_DIR = Path("./fitbit_csv"); CSV_DIR.mkdir(exist_ok=True)
 MAX_CALLS_HOUR = 150
 SAFETY_MARGIN  = 10            # 140콜에서 자발 휴식
 token = os.getenv("FITBIT_TOKEN")
+pdb.set_trace()
 if not token:
     sys.exit("? FITBIT_TOKEN environment variable not found")
 HEADERS = {"Authorization": f"Bearer {token}"}

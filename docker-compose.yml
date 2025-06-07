@@ -27,7 +27,6 @@ services:
       # (필요하다면 FITBIT_TOKEN 기본값을 여기 두고, Streamlit에서 덮어쓸 수 있음)
     volumes:
       - ./data_service:/app
-      - ./streamlit_app/fitbit_csv:/app/fitbit_csv  # 실제 CSV가 여기에 생성됨
     ports:
       - "8001:8001"
 

@@ -4,6 +4,12 @@ import subprocess
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 app = FastAPI(title="BioFit Data Service")
 
@@ -18,8 +24,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL 환경변수가 설정되지 않았습니다.")
 
-# (선택) FITBIT_TOKEN 기본값을 여기 둘 수 있지만, Streamlit에서 덮어쓰는 방식을 권장
-FITBIT_TOKEN_ENV = "FITBIT_TOKEN"
+
 
 # AI Service 호출은 Data Service 역할이 아니므로 여기에서는 생략
 
@@ -29,9 +34,12 @@ def fetch_and_preprocess(req: FetchRequest):
     s = req.start_date
     e = req.end_date
     token = req.token # streamlit에서 입력받은 토큰
-    os.environ['FITBIT_TOKEN'] = token
+    logging.info(f"[FastAPI] 수신된 데이터 요청: uid={uid}, start={s}, end={e}")
+    logging.info(f"[FastAPI] 토큰 앞 10자: {token[:100]}")
+    logging.info(f"[FastAPI] 토큰 끝 10자: {token[-10:]}")
+    logging.info(f"[FastAPI] 환경변수에 FITBIT_TOKEN 설정 완료")
+    os.environ["FITBIT_TOKEN"] = token
 
-    # token = os.getenv(FITBIT_TOKEN_ENV) 
     if not token:
         raise HTTPException(status_code=400, detail="FITBIT_TOKEN 환경변수가 없습니다.")
 

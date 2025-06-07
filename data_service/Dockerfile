@@ -1,5 +1,5 @@
 # data_service/Dockerfile
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
@@ -22,4 +22,4 @@ RUN mkdir -p /app/fitbit_csv
 
 EXPOSE 8001
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "debug", "--reload"]

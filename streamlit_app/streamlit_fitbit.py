@@ -3,6 +3,13 @@ import os
 import requests
 import streamlit as st
 from datetime import datetime
+import logging
+import json
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
 st.set_page_config(page_title="BioFit Streamlit Frontend", layout="centered")
 st.title("🔄 BioFit: 데이터 수집·전처리 요청")
@@ -27,7 +34,9 @@ if st.button("🚀 데이터 수집·전처리 시작"):
     if not token.strip():
         st.error("❗ Fitbit Access Token을 입력해주세요.")
         st.stop()
-
+    logging.info(f"[Streamlit] 사용자 입력 토큰 앞 10자: {token[:10]}")
+    logging.info(f"[Streamlit] 사용자 입력 토큰 뒤 10자: {token[-10:]}")
+    logging.info(f"[Streamlit] 전송 페이로드: uid={uid}, start={start_date}, end={end_date}")
     # (3) 환경변수에 토큰 설정 (Data Service로 전달되도록)
     # os.environ["FITBIT_TOKEN"] = token.strip()
 
@@ -38,7 +47,8 @@ if st.button("🚀 데이터 수집·전처리 시작"):
         "end_date": end_date.strftime("%Y-%m-%d"),
         "token": token.strip()
     }
-
+    logging.info(json.dumps(payload, indent=2)[:200] + "...")
+    logging.info(json.dumps(payload, indent=2)[-10:] + "...")
     st.info("⏳ Data Service에 데이터 수집·전처리 요청 중...")
     try:
         resp = requests.post(DATA_SERVICE_URL, json=payload, timeout=120)

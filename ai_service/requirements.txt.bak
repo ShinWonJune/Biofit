@@ -1,0 +1,18 @@
+
+# ê¸°ë³¸ ê³¼í•™ ?—°?‚° ?¼?´ë¸ŒëŸ¬ë¦?
+numpy==1.26.4
+pandas==2.2.2
+
+# ëª¨ë¸Â·?„¤ëª…ìš©
+catboost==1.2.5          # CatBoostRegressor
+shap==0.45.0             # ëª¨ë¸ ?•´?„
+
+# Llama ê¸°ë°˜ LLM
+llama-cpp-python==0.2.55 # import llama_cpp
+
+psycopg2
+
+fastapi>=0.95.0        # FastAPI ?›¹ ?”„? ˆ?ž„?›Œ?¬
+uvicorn[standard]>=0.21.1  # Uvicorn ASGI ?„œë²? (& extras)
+# ?†‘ ê°? ë²„ì „??? 2025-06 ê¸°ì?? ?•ˆ? • ë²„ì „?ž…?‹ˆ?‹¤.
+#   GPU?š© CatBoostê°? ?•„?š”?•˜ë©? `catboost[cuda]`ë¡? ë°”ê?? ?ˆ˜ ?žˆ?Šµ?‹ˆ?‹¤.

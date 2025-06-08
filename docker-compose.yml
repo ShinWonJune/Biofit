@@ -11,6 +11,8 @@ services:
       POSTGRES_DB: biofitdb
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d # For initial SQL scripts
+      - ./db/init/feedback_sleep.csv:/feedback_sleep.csv
     ports:
       - "5432:5432"
 
@@ -34,6 +36,7 @@ services:
   data:
     build:
       context: ./data_service
+      dockerfile: Dockerfile
     container_name: biofit-data
     restart: unless-stopped
     depends_on:
@@ -69,6 +72,27 @@ services:
       - DATABASE_URL=postgresql://biofit:biofitpass@db:5432/biofitdb
     ports:
       - "8001:8001"
+
+  ai_service:
+    build: 
+      context: ./ai_service
+      dockerfile: Dockerfile
+    container_name: biofit-ai-service
+    depends_on:
+      - db
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      MODEL_PATH: /app/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+      WINDOW: 7
+
+    volumes:
+      - ./ai_service:/app
+
+    ports:
+      - "8002:8002"
+
 
 volumes:
   pgdata:

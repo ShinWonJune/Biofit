@@ -1,239 +1,250 @@
 # -*- coding: utf-8 -*-
-"""
-sleep_coach_full_kr_v6.py  (DB)
-
-CSV ´ë½Å DB¿¡¼­ Á÷Á¢ µ¥ÀÌÅÍ¸¦ Á¶È¸ÇÏ¿© ¸¶½ºÅÍ DF¸¦ ±¸¼ºÇÏ°í, CatBoost & SHAP·Î ¼ö¸é È¿À²À» ¿¹ÃøÇÑ µÚ
-Mistral-7B ¸ğµ¨À» »ç¿ëÇØ ÇÑ±¹¾î ÄÚÄª ¸Ş½ÃÁö¸¦ »ı¼ºÇÕ´Ï´Ù.
-"""
-
+# ai_service/sleep_coach_full_kr_v6.py
 from __future__ import annotations
+import re, textwrap, warnings, datetime
 from pathlib import Path
-import re, textwrap, warnings, argparse
-import pandas as pd, numpy as np
+
+import numpy as np
+import pandas as pd
 from catboost import CatBoostRegressor
 import shap
 from llama_cpp import Llama
 
-from db_utils import read_table  # DB¿¡¼­ Å×ÀÌºíÀ» ÀĞ¾î¿À´Â À¯Æ¿
+from db_utils import read_table
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-KEYS = ["user_id"]
-TARGET, EXCL = "efficiency", ["user_id"]
-TIME_ONLY = re.compile(r"\d{1,2}:\d{2}:\d{2}\s*(AM|PM|am|pm)?$")
+# â”€â”€ ê³µí†µ ë³€ìˆ˜ â”€â”€
+KEYS   = ["user_id"]
+TARGET = "efficiency"
 
+TIME_ONLY = re.compile(r"\d{1,2}:\d{2}:\d{2}$")          # AM/PM ì‚­ì œ
 
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ë‚ ì§œÂ·ì‹œê°„ íŒŒì‹± ë³´ê°• â€• ë°€ë¦¬ì´ˆÂ·AM/PM ì œê±° + ê³ ì • í¬ë§·
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _combine_dt(df: pd.DataFrame, dcol="date", tcol="time") -> pd.DatetimeIndex:
-    """
-    ³¯Â¥ ¿­(dcol)°ú ½Ã°£ ¿­(tcol)À» ÇÕÃÄ¼­ datetimeÀ¸·Î º¯È¯ÇÕ´Ï´Ù.
-    """
-    date_str = pd.to_datetime(df[dcol], errors="coerce").dt.strftime("%Y-%m-%d")
+    """dateÂ·time ë¬¸ìì—´ì„ ì•ˆì „í•˜ê²Œ í•©ì³ datetime64 ë°˜í™˜."""
+    date_part = pd.to_datetime(df[dcol], errors="coerce").dt.strftime("%Y-%m-%d")
 
-    def clean(t):
-        s = str(t).strip()
+    def clean_time(cell):
+        s = str(cell).strip()
+        # ë°€ë¦¬ì´ˆ ì œê±° ("04:33:30.000" â†’ "04:33:30")
+        s = s.split(".")[0]
+        # AM/PM í‘œê¸° ì œê±°
+        s = s.replace("AM", "").replace("PM", "").replace("am", "").replace("pm", "").strip()
         if TIME_ONLY.match(s):
             return s
-        return s[-8:] if len(s) >= 8 else "00:00:00"
+        return "00:00:00"   # íŒŒì‹± ë¶ˆê°€ ì‹œ 0ì‹œ ì²˜ë¦¬
 
-    time_str = df[tcol].apply(clean)
+    time_part = df[tcol].apply(clean_time)
     return pd.to_datetime(
-        date_str + " " + time_str,
+        date_part + " " + time_part,
+        format="%Y-%m-%d %H:%M:%S",
         errors="coerce"
     )
 
-
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ daily reader ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-def read_daily_db(table: str, agg: dict[str, str], uid: str) -> pd.DataFrame:
-    """
-    ÁöÁ¤µÈ Å×ÀÌºí¿¡¼­ user_id ±âÁØÀ¸·Î daily Áı°è µ¥ÀÌÅÍÇÁ·¹ÀÓÀ» ¹İÈ¯ÇÕ´Ï´Ù.
-    """
-    df = read_table(table, where=f"user_id = '{uid}'")
+# â”€â”€ DB ë¡œ ì½ì–´ì˜¤ëŠ” í•¨ìˆ˜ë“¤ â”€â”€
+def read_daily_db(table_suffix: str, agg: dict[str, str], uid: str) -> pd.DataFrame:
+    tbl = f"{uid}_{table_suffix}"
+    df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
 
-
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ minute reader ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
 def read_minute_db(
-    table: str,
+    table_suffix: str,
     *,
     mean_cols: list[str] | None = None,
-    sum_cols: list[str] | None = None,
-    uid: str,
+    sum_cols:  list[str] | None = None,
+    uid: str
 ) -> pd.DataFrame:
-    df = read_table(table, where=f"user_id = '{uid}'")
+    tbl = f"{uid}_{table_suffix}"
+    df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["timestamp"] = _combine_dt(df)
-    df["date"] = df["timestamp"].dt.normalize()
+    df["date"]      = df["timestamp"].dt.normalize()
 
     agg: dict[str, str] = {}
     if mean_cols:
         agg.update({c: "mean" for c in mean_cols})
     if sum_cols:
-        agg.update({c: "sum" for c in sum_cols})
+        agg.update({c: "sum"  for c in sum_cols})
 
-    return df.groupby(KEYS + ["date"]).agg(agg).reset_index()
+    return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
 
-
-def read_activity_hourly_db(table: str, uid: str) -> pd.DataFrame:
-    df = read_table(table, where=f"user_id = '{uid}'")
+def read_activity_hourly_db(table_suffix: str, uid: str) -> pd.DataFrame:
+    tbl = f"{uid}_{table_suffix}"
+    df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["timestamp"] = _combine_dt(df)
-    df["date"] = df["timestamp"].dt.normalize()
-    df["hour"] = df["timestamp"].dt.hour
+    df["hour"]      = df["timestamp"].dt.hour
     return (
-        df.groupby(KEYS + ["date", "hour"], as_index=False)["steps"]
+        df.groupby(KEYS + ["hour"], as_index=False)["steps"]
           .sum()
           .rename(columns={"steps": "steps_hour_sum"})
     )
 
-
-def read_sleep_detail_stage_db(table: str, uid: str) -> pd.DataFrame:
-    df = read_table(table, where=f"user_id = '{uid}'")
-    df["start"] = _combine_dt(df, dcol="date", tcol="time")
-    df["date"] = df["start"].dt.normalize()
+def read_sleep_detail_stage_db(table_suffix: str, uid: str) -> pd.DataFrame:
+    tbl = f"{uid}_{table_suffix}"
+    df  = read_table(tbl, where=f"user_id = '{uid}'")
+    df["start"]        = _combine_dt(df, dcol="date", tcol="time")
+    df["date"]         = df["start"].dt.normalize()
     df["duration_min"] = df["duration"] / 60
-    return (
+    pivot = (
         df.groupby(KEYS + ["date", "stage"], as_index=False)["duration_min"]
           .sum()
           .pivot(index=KEYS + ["date"], columns="stage", values="duration_min")
           .reset_index()
-          .rename(columns=lambda c: f"stage_{c}_min" if c not in KEYS + ["date"] else c)
     )
+    pivot.columns = [
+        f"stage_{c}_min" if c not in KEYS + ["date"] else c
+        for c in pivot.columns
+    ]
+    return pivot
 
-
-def read_sleep_window_db(table: str, uid: str) -> pd.DataFrame:
-    df = read_table(table, where=f"user_id = '{uid}'")
+def read_sleep_window_db(table_suffix: str, uid: str) -> pd.DataFrame:
+    tbl = f"{uid}_{table_suffix}"
+    df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["start"] = _combine_dt(df, dcol="date", tcol="time")
-    df["end"] = df["start"] + pd.to_timedelta(df["duration"], unit="s")
+    df["end"]   = df["start"] + pd.to_timedelta(df["duration"], unit="s")
     df["sleep_date"] = df["end"].dt.normalize()
 
     first = df.groupby(KEYS + ["sleep_date"], as_index=False)["start"].min()
     last  = df.groupby(KEYS + ["sleep_date"], as_index=False)["end"].max()
 
-    return (
-        first.merge(last, on=KEYS + ["sleep_date"])
-             .rename(columns={"sleep_date": "date",
-                              "start": "sleep_time",
-                              "end":   "wake_time"})
-    )
+    merged = first.merge(last, on=KEYS + ["sleep_date"])
+    return merged.rename(columns={
+        "sleep_date": "date",
+        "start": "sleep_time",
+        "end":   "wake_time"
+    })
 
-
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ master DF ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+# â”€â”€ ë§ˆìŠ¤í„° DF êµ¬ì¶• â”€â”€
 def build_master(uid: str) -> pd.DataFrame:
     daily = [
-        read_daily_db(
-            "23RK3S_sleep_summary",
-            {"efficiency": "mean", "stage_deep": "sum",
-             "stage_light": "sum", "stage_rem": "sum", "stage_wake": "sum"},
-            uid
-        ),
-        read_daily_db(
-            "23RK3S_activity_sum",
-            {"steps": "sum", "distance": "sum", "calories": "sum"},
-            uid
-        ),
-        read_daily_db("23RK3S_resting_hr", {"resting_hr": "mean"}, uid),
-        read_daily_db("23RK3S_azm", {"total": "sum", "fatburn": "sum", "cardio": "sum"}, uid),
+        read_daily_db("sleep_summary",
+                     {"efficiency": "mean",
+                      "stage_deep": "sum",
+                      "stage_light":"sum",
+                      "stage_rem":  "sum",
+                      "stage_wake": "sum"},
+                     uid),
+        read_daily_db("activity_sum",
+                     {"steps":"sum", "distance":"sum", "calories":"sum"},
+                     uid),
+        read_daily_db("resting_hr", {"resting_hr":"mean"}, uid),
+        read_daily_db("azm",        {"total":"sum", "fatburn":"sum", "cardio":"sum"}, uid),
     ]
+
     minute = [
-        read_minute_db("23RK3S_heart_rate_1min", mean_cols=["bpm"], uid=uid),
-        read_minute_db("23RK3S_activity_1min", sum_cols=["steps", "distance", "calories"], uid=uid),
-        read_minute_db("23RK3S_hrv", mean_cols=["rmssd", "hf", "lf"], uid=uid),
-        read_sleep_detail_stage_db("23RK3S_sleep_detail", uid),
+        read_minute_db("heart_rate_1min", mean_cols=["bpm"], uid=uid),
+        read_minute_db("activity_1min",  sum_cols=["steps","distance","calories"], uid=uid),
+        read_minute_db("hrv",            mean_cols=["rmssd","hf","lf"], uid=uid),
+        read_sleep_detail_stage_db("sleep_detail", uid),
     ]
 
     master = daily[0]
-    for d in daily[1:] + minute:
-        master = master.merge(d, on=KEYS + ["date"], how="outer")
+    for df in daily[1:] + minute:
+        master = master.merge(df, on=KEYS + ["date"], how="outer")
 
     return master.sort_values("date").fillna(method="ffill")
 
-
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ ML & SHAP ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+# â”€â”€ ì „ì²˜ë¦¬ & ëª¨ë¸ â”€â”€
 def add_roll7(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for c in df.select_dtypes("number").columns:
-        df[f"{c}_roll7"] = df[c].rolling(7, 1).mean()
-    return df
+    out = df.copy()
+    for col in out.select_dtypes("number"):
+        out[f"{col}_roll7"] = out[col].rolling(window=7, min_periods=1).mean()
+    return out
 
 def get_X(df: pd.DataFrame) -> pd.DataFrame:
     return (
-        df.drop(columns=[TARGET] + EXCL, errors="ignore")
+        df.drop(columns=[TARGET] + KEYS, errors="ignore")
           .select_dtypes("number")
           .fillna(method="bfill").fillna(method="ffill")
     )
 
 def train_cat(df: pd.DataFrame) -> CatBoostRegressor:
-    model = CatBoostRegressor(iterations=500, depth=6, learning_rate=0.05,
-                              silent=True, random_seed=0)
+    model = CatBoostRegressor(
+        iterations=500, depth=6, learning_rate=0.05,
+        silent=True, random_seed=0
+    )
     model.fit(get_X(df), df[TARGET])
     return model
 
-def shap_top(model: CatBoostRegressor, X: pd.DataFrame, k: int = 6) -> list[tuple[str, float, float]]:
+def shap_top(model, X: pd.DataFrame, k: int = 6):
     vals = shap.TreeExplainer(model).shap_values(X)[-1]
     idx  = np.abs(vals).argsort()[::-1][:k]
     return [(X.columns[i], float(X.iloc[-1, i]), float(vals[i])) for i in idx]
 
+# â”€â”€ ëª¨ë“œ ì•ˆì „ í—¬í¼ â”€â”€
+def _safe_mode(series: pd.Series, default: datetime.time) -> datetime.time:
+    series = series.dropna()
+    return series.mode().iat[0] if not series.empty else default
 
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ ÇÁ·ÒÇÁÆ® ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-SYS_PROMPT = textwrap.dedent("""
-´ç½ÅÀº ÇÑ±¹¾î ¼ö¸é¡¤È°µ¿ ÄÚÄ¡ÀÔ´Ï´Ù.
-[summary] ÁÁÀº Á¡ 2°³¡¤°³¼±Á¡ 2°³ (¼ıÀÚ Æ÷ÇÔ) 4~6¹®Àå
-[plan] 4ÁÙ: ¿îµ¿(ÃßÃµ ½Ã°£´ë) / È¯°æ / »ıÈ°(ÃëÄ§¡¤±â»ó) / ½Ä´Ü
-¼ıÀÚ ¿·¿¡ ´ÜÀ§¡¤¸ñÇ¥Â÷(¡¾) Ç¥±â, '~ÇØº¸¼¼¿ä' ¾îÁ¶
+# â”€â”€ LLM í”„ë¡¬í”„íŠ¸ í…œí”Œë¦¿ â”€â”€
+SYS_PROMPT = textwrap.dedent("""\
+ë‹¹ì‹ ì€ í•œêµ­ì–´ ìˆ˜ë©´Â·í™œë™ ì½”ì¹˜ì…ë‹ˆë‹¤.
+[summary] ì¢‹ì€ ì  2ê°œÂ·ê°œì„ ì  2ê°œ (ìˆ«ì í¬í•¨) 4~6ë¬¸ì¥
+[plan] 4ì¤„: ìš´ë™(ì¶”ì²œ ì‹œê°„ëŒ€) / í™˜ê²½ / ìƒí™œ(ì·¨ì¹¨Â·ê¸°ìƒ) / ì‹ë‹¨
+ìˆ«ì ì˜†ì— ë‹¨ìœ„Â·ëª©í‘œì°¨(Â±) í‘œê¸°, '~í•´ë³´ì„¸ìš”' ì–´ì¡°
 """)
 
-USER_TMPL = textwrap.dedent("""
-### ÃÖ±Ù {n}ÀÏ µ¥ÀÌÅÍ
+USER_TMPL = textwrap.dedent("""\
+### ìµœê·¼ {n}ì¼ ë°ì´í„°
 {table}
 
-### º¯È­À²(7ÀÏ vs ÀÌÀü 7ÀÏ)
+### ë³€í™”ìœ¨(7ì¼ vs ì´ì „ 7ì¼)
 {change}
 
-### È°µ¿ ½Ã°¢´ë
-- ÃÖ¼Ò: {low_hr}
-- ÃÖ´ë: {high_hr}
+### í™œë™ ì‹œê°ëŒ€
+- ìµœì†Œ: {low_hr}
+- ìµœëŒ€: {high_hr}
 
-### Æò±Õ ÃëÄ§¡¤±â»ó
-- ÃëÄ§: {avg_sleep}
-- ±â»ó: {avg_wake}
+### í‰ê·  ì·¨ì¹¨Â·ê¸°ìƒ
+- ì·¨ì¹¨: {avg_sleep}
+- ê¸°ìƒ: {avg_wake}
 
-### ¿¹Ãø È¿À²: {pred:.1f} %
+### ì˜ˆì¸¡ íš¨ìœ¨: {pred:.1f} %
 
 ### SHAP TOP {k}
-ÁöÇ¥ | ÇöÀç°ª | ¿µÇâ
+ì§€í‘œ | í˜„ì¬ê°’ | ì˜í–¥
 {shap_lines}
 
-À§ Á¤º¸¸¦ ¹ÙÅÁÀ¸·Î [summary]/[plan] ÀÛ¼ºÇÏ¼¼¿ä.
+ìœ„ ì •ë³´ë¥¼ ë°”íƒ•ìœ¼ë¡œ [summary]/[plan] ì‘ì„±í•˜ì„¸ìš”.
 """)
 
-
 def chat(model_path: Path, sys: str, user: str) -> str:
-    llm = Llama(model_path=str(model_path), n_ctx=4096,
-                temperature=0.9, top_p=0.95, n_gpu_layers=0)
+    llm = Llama(
+        model_path=str(model_path),
+        n_ctx=4096,
+        temperature=0.9,
+        top_p=0.95,
+        n_gpu_layers=0
+    )
     res = llm.create_chat_completion(
         messages=[{"role": "user", "content": f"{sys}\n\n{user}"}]
     )
     return res["choices"][0]["message"]["content"].strip()
 
-
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ main ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-def main(uid: str, model_path: Path, window: int):
+def main(uid: str, model_path: Path, window: int) -> str:   # ë°˜í™˜í˜• str
     master = add_roll7(build_master(uid))
-    cat     = train_cat(master)
-    X       = get_X(master)
+    cat    = train_cat(master)
+    X      = get_X(master)
 
-    pred    = float(cat.predict(X.tail(1))[0])
-    shap_k  = shap_top(cat, X)
-    recent  = master.tail(window)
+    pred   = float(cat.predict(X.tail(1))[0])
+    shap_k = shap_top(cat, X)
+    recent = master.tail(window)
 
-    act_hr = read_activity_hourly_db("23RK3S_activity_1min", uid)
+    # í™œë™ ì‹œê°ëŒ€
+    act_hr = read_activity_hourly_db("activity_1min", uid)
     low_hr  = f"{int(act_hr.groupby('hour')['steps_hour_sum'].mean().idxmin()):02d}:00"
     high_hr = f"{int(act_hr.groupby('hour')['steps_hour_sum'].mean().idxmax()):02d}:00"
 
-    swin = read_sleep_window_db("23RK3S_sleep_detail", uid)
-    avg_sleep = swin["sleep_time"].dt.time.mode()[0] if not swin.empty else "23:00"
-    avg_wake  = swin["wake_time"].dt.time.mode()[0] if not swin.empty else "07:00"
+    # ìˆ˜ë©´/ê¸°ìƒ í‰ê·  (ì•ˆì „ ëª¨ë“œ ì‚¬ìš©)
+    swin = read_sleep_window_db("sleep_detail", uid)
+    avg_sleep = _safe_mode(swin["sleep_time"].dt.time, datetime.time(23, 0))
+    avg_wake  = _safe_mode(swin["wake_time"].dt.time,  datetime.time(7, 0))
 
-    prev   = master.iloc[-2 * window : -window]
+    # ë³€í™”ìœ¨
+    prev   = master.iloc[-2 * window:-window]
     change = []
     for col in ["steps", "total", TARGET]:
         if col in recent and col in prev and prev[col].mean() != 0:
@@ -247,20 +258,22 @@ def main(uid: str, model_path: Path, window: int):
         change=change,
         low_hr=low_hr, high_hr=high_hr,
         avg_sleep=str(avg_sleep)[:-3], avg_wake=str(avg_wake)[:-3],
-        pred=pred,
-        k=len(shap_k),
+        pred=pred, k=len(shap_k),
         shap_lines="\n".join(f"{f} | {v:.1f} | {imp:+.2f}" for f, v, imp in shap_k)
     )
 
-    print("\n=== ÇÑ±¹¾î ÄÚÄª ¸Ş½ÃÁö ===\n")
-    print(chat(model_path, SYS_PROMPT, prompt))
+    message = chat(model_path, SYS_PROMPT, prompt)
+
+    print("\n=== í•œêµ­ì–´ ì½”ì¹­ ë©”ì‹œì§€ ===\n")
+    print(message)
+    return message 
 
 
-# ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ CLI ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sleep-Coach v6 (DB ±â¹İ)")
-    parser.add_argument("--user", required=True, help="user_id (e.g. 23RK3S)")
-    parser.add_argument("--model", required=True, type=Path, help="GGUF model path")
-    parser.add_argument("--window", type=int, default=7)
+    import argparse
+    parser = argparse.ArgumentParser(description="Sleep-Coach DB ë²„ì „")
+    parser.add_argument("--user",   required=True, help="user_id")
+    parser.add_argument("--model",  required=True, type=Path, help="GGUF ëª¨ë¸ ê²½ë¡œ")
+    parser.add_argument("--window", type=int, default=7, help="ìµœê·¼ Nì¼")
     args = parser.parse_args()
     main(args.user, args.model, args.window)

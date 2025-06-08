@@ -36,6 +36,9 @@ class Req(BaseModel):
 def predict(req: Req):
     run_id = uuid.uuid4()
 
+
+
+
     try:
         message = coach_main(uid=req.uid,        # ← 메시지 수신
                              model_path=MODEL_PATH,

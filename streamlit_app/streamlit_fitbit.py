@@ -5,6 +5,7 @@ import streamlit as st
 from datetime import datetime
 import logging
 import json
+import pandas as pd, psycopg2
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,6 +15,13 @@ logging.basicConfig(
 st.set_page_config(page_title="BioFit Streamlit Frontend", layout="centered")
 st.title("🔄 BioFit: 데이터 수집·전처리 요청")
 
+# ─── Session state 초기화 ───
+if "data_ready" not in st.session_state:
+    st.session_state.data_ready = False
+if "last_uid" not in st.session_state:
+    st.session_state.last_uid = ""
+
+
 # (1) 사용자 입력
 uid = st.text_input("1) 내부 회원 ID (예: employee_001)", value="")
 start_date = st.date_input("2) 조회 시작 날짜", value=datetime.today())
@@ -22,6 +30,18 @@ token = st.text_input("4) Fitbit Access Token", type="password")
 
 # (2) Environment Variables
 DATA_SERVICE_URL = os.getenv("DATA_SERVICE_URL", "http://data:8001/fetch")
+AI_URL           = os.getenv("AI_URL",           "http://ai_service:8000/predict")
+
+conn = psycopg2.connect(
+    host=os.getenv("DB_HOST", "db"),
+    port=os.getenv("DB_PORT", "5432"),
+    dbname=os.getenv("DB_NAME", "biofitdb"),
+    user=os.getenv("DB_USER", "biofit"),
+    password=os.getenv("DB_PASSWORD", "biofitpass"),
+)
+
+
+# ─── 1) 데이터 수집·전처리 버튼 ───
 
 if st.button("🚀 데이터 수집·전처리 시작"):
     # 입력 검증
@@ -68,3 +88,32 @@ if st.button("🚀 데이터 수집·전처리 시작"):
     # (6) 처리된 데이터가 DB에 모두 저장된 상태이므로, 여기서 추가 작업(조회·시각화 등)을 할 수 있음.
     st.info("✅ 데이터가 DB에 저장되었습니다.")
     st.write("이제 AI 서비스 또는 다른 로직을 호출할 수 있습니다.")
+    # 세션 상태 업데이트
+    st.session_state.data_ready = True
+    st.session_state.last_uid   = uid.strip()
+
+# ─── 2) AI 추론 버튼 ───
+disabled = not st.session_state.data_ready or st.session_state.last_uid != uid.strip()
+if st.button("🤖 AI 추론 실행", disabled=disabled):
+    st.info("⏳ AI 모델 추론 중...")
+    try:
+        r = requests.post(AI_URL, json={"uid": uid.strip()}, timeout=300)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        st.error(f"❌ AI 서비스 호출 실패: {e}")
+        st.stop()
+
+    if r.json().get("status") != "ok":
+        st.error(f"❌ AI 서비스 오류: {r.text}")
+        st.stop()
+
+    st.success("AI 추론 완료 ✅")
+
+    df = pd.read_sql(
+        "SELECT created_at, note FROM predictions WHERE uid = %s "
+        "ORDER BY created_at DESC LIMIT 20",
+        conn,
+        params=(uid.strip(),),
+    )
+    st.write("### 최근 예측 결과")
+    st.dataframe(df, use_container_width=True)

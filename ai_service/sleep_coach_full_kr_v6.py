@@ -3,6 +3,7 @@
 from __future__ import annotations
 import re, textwrap, warnings, datetime
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from llama_cpp import Llama
 from db_utils import read_table
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+logger = logging.getLogger(__name__)
 
 # ── 공통 변수 ──
 KEYS   = ["user_id"]
@@ -45,6 +47,16 @@ def _combine_dt(df: pd.DataFrame, dcol="date", tcol="time") -> pd.DatetimeIndex:
     )
 
 # ── DB 로 읽어오는 함수들 ──
+def read_feedback_db(uid: str) -> pd.DataFrame:
+    try:
+        df = read_table(f"{uid}_feedback", where=f"user_id = '{uid}'")
+        print("[DEBUG] feedback DB 읽기 성공")
+    except Exception as e:  # UndefinedTable 등
+        logger.warning(f"{uid}_feedback 없음 → 빈 DF 사용 ({e})")
+        return pd.DataFrame(columns=["user_id", "date", "sleep_score"])
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    return df.groupby(["user_id", "date"], as_index=False)["sleep_score"].mean()
+
 def read_daily_db(table_suffix: str, agg: dict[str, str], uid: str) -> pd.DataFrame:
     tbl = f"{uid}_{table_suffix}"
     df  = read_table(tbl, where=f"user_id = '{uid}'")
@@ -132,6 +144,9 @@ def build_master(uid: str) -> pd.DataFrame:
                      uid),
         read_daily_db("resting_hr", {"resting_hr":"mean"}, uid),
         read_daily_db("azm",        {"total":"sum", "fatburn":"sum", "cardio":"sum"}, uid),
+        
+        read_feedback_db(uid),   # <─ feedback 컬럼 포함
+
     ]
 
     minute = [
@@ -174,6 +189,21 @@ def shap_top(model, X: pd.DataFrame, k: int = 6):
     idx  = np.abs(vals).argsort()[::-1][:k]
     return [(X.columns[i], float(X.iloc[-1, i]), float(vals[i])) for i in idx]
 
+# ── 새 함수 ─────────────────────────────────────────────
+def get_last_feedback(uid: str) -> str | None:
+    try:
+        df = read_table(
+            "predictions",
+            where=f"uid = '{uid}' ORDER BY created_at DESC LIMIT 1"
+        )
+        if not df.empty and df.iloc[0]["message"]:
+            return str(df.iloc[0]["message"])
+    except Exception as e:
+        logger.warning(f"get_last_feedback 실패: {e}")
+    return None
+
+
+
 # ── 모드 안전 헬퍼 ──
 def _safe_mode(series: pd.Series, default: datetime.time) -> datetime.time:
     series = series.dropna()
@@ -210,6 +240,39 @@ USER_TMPL = textwrap.dedent("""\
 
 위 정보를 바탕으로 [summary]/[plan] 작성하세요.
 """)
+
+# ── 코칭 템플릿 ──
+FIRST_TMPL = USER_TMPL          # 첫 코칭(=기존)
+
+FOLLOW_TMPL = textwrap.dedent("""\
+### [지난 코칭 요약]
+{prev_msg}
+
+### [이번 주 데이터]  (최근 {n}일)
+{table}
+
+### 변화율(7일 vs 이전 7일)
+{change}
+
+### 활동 시각대
+- 최소: {low_hr}
+- 최대: {high_hr}
+
+### 평균 취침·기상
+- 취침: {avg_sleep}
+- 기상: {avg_wake}
+
+### 예측 효율: {pred:.1f} %
+
+### SHAP TOP {k}
+지표 | 현재값 | 영향
+{shap_lines}
+
+이번 데이터가 **지난 코칭을 잘 지켰는지 여부(지켰다/못 지켰다)**를 먼저 한 문장으로 판단하고,
+이어서는 [summary]/[plan] 형식으로 ‘구체적 개선점’을 제시하세요.
+""")
+
+
 
 def chat(model_path: Path, sys: str, user: str) -> str:
     llm = Llama(
@@ -252,14 +315,20 @@ def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
             change.append(f"{col}:{pct:+.1f}%")
     change = "; ".join(change)
 
-    prompt = USER_TMPL.format(
+
+    prev_msg = get_last_feedback(uid)
+    tmpl = FOLLOW_TMPL if prev_msg else FIRST_TMPL
+
+
+    prompt = tmpl.format(
+        prev_msg=prev_msg or "",
         n=len(recent),
         table=recent.iloc[:, :12].to_string(index=False),
         change=change,
         low_hr=low_hr, high_hr=high_hr,
         avg_sleep=str(avg_sleep)[:-3], avg_wake=str(avg_wake)[:-3],
         pred=pred, k=len(shap_k),
-        shap_lines="\n".join(f"{f} | {v:.1f} | {imp:+.2f}" for f, v, imp in shap_k)
+        shap_lines="\n".join(f"{f} | {v:.1f} | {imp:+.2f}" for f,v,imp in shap_k)
     )
 
     message = chat(model_path, SYS_PROMPT, prompt)

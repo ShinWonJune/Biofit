@@ -1,5 +1,5 @@
-# streamlit_app/streamlit_fitbit.py
 import os
+import json
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -32,7 +32,6 @@ else:
     if "last_uid" not in st.session_state:
         st.session_state.last_uid = ""
 
-
     # (1) 사용자 입력
     uid = st.text_input("1) 내부 회원 ID (예: employee_001)", value="")
     start_date = st.date_input("2) 조회 시작 날짜", value=datetime.today())
@@ -51,9 +50,7 @@ else:
         password=os.getenv("DB_PASSWORD", "biofitpass"),
     )
 
-
     # ─── 1) 데이터 수집·전처리 버튼 ───
-
     if st.button("🚀 데이터 수집·전처리 시작"):
         # 입력 검증
         if not uid.strip():
@@ -68,18 +65,12 @@ else:
         logging.info(f"[Streamlit] 사용자 입력 토큰 앞 10자: {token[:10]}")
         logging.info(f"[Streamlit] 사용자 입력 토큰 뒤 10자: {token[-10:]}")
         logging.info(f"[Streamlit] 전송 페이로드: uid={uid}, start={start_date}, end={end_date}")
-        # (3) 환경변수에 토큰 설정 (Data Service로 전달되도록)
-        # os.environ["FITBIT_TOKEN"] = token.strip()
-
-        # (4) 요청 페이로드 구성
         payload = {
             "uid": uid.strip(),
             "start_date": start_date.strftime("%Y-%m-%d"),
             "end_date": end_date.strftime("%Y-%m-%d"),
             "token": token.strip()
         }
-        logging.info(json.dumps(payload, indent=2)[:200] + "...")
-        logging.info(json.dumps(payload, indent=2)[-10:] + "...")
         st.info("⏳ Data Service에 데이터 수집·전처리 요청 중...")
         try:
             resp = requests.post(DATA_SERVICE_URL, json=payload, timeout=120)
@@ -93,13 +84,9 @@ else:
             st.error(f"❌ Data Service 오류: {data}")
             st.stop()
 
-        # (5) 성공 메시지 표시
         st.success(data.get("message", "데이터 수집·전처리 완료"))
-
-        # (6) 처리된 데이터가 DB에 모두 저장된 상태이므로, 여기서 추가 작업(조회·시각화 등)을 할 수 있음.
         st.info("✅ 데이터가 DB에 저장되었습니다.")
         st.write("이제 AI 서비스 또는 다른 로직을 호출할 수 있습니다.")
-        # 세션 상태 업데이트
         st.session_state.data_ready = True
         st.session_state.last_uid   = uid.strip()
 
@@ -130,28 +117,26 @@ else:
         message = df["message"].iloc[0]
 
         # 헤더
-        st.markdown("## 예측 결과", unsafe_allow_html=False)
+        st.markdown("## 예측 결과")
 
-        # 강조 박스 (HTML + CSS)
-        st.markdown(
-            f"""
-            <div style="
-                background-color: #e8f5e9;
-                padding: 20px;
-                border-radius: 12px;
-                margin-top: 10px;
+        # 강조 박스 HTML (components.html 사용)
+        html = f"""
+        <div style="
+            background-color: #e8f5e9;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 10px;
+        ">
+            <p style="
+                font-size: 24px;
+                font-weight: bold;
+                line-height: 1.4;
+                color: #2e7d32;
+                text-align: center;
+                margin: 0;
             ">
-                <p style="
-                    font-size: 24px;
-                    font-weight: bold;
-                    line-height: 1.4;
-                    color: #2e7d32;
-                    text-align: center;
-                    margin: 0;
-                ">
-                    {message}
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                {message}
+            </p>
+        </div>
+        """
+        components.html(html, height=150)

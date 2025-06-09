@@ -212,12 +212,17 @@ def _safe_mode(series: pd.Series, default: datetime.time) -> datetime.time:
 # ── LLM 프롬프트 템플릿 ──
 SYS_PROMPT = textwrap.dedent("""\
 당신은 한국어 수면·활동 코치입니다.
+모든 답변은 반드시 "한국어로 작성"해야 하며, "영어를 사용하지 마세요".
+
 [summary] 좋은 점 2개·개선점 2개 (숫자 포함) 4~6문장
 [plan] 4줄: 운동(추천 시간대) / 환경 / 생활(취침·기상) / 식단
 숫자 옆에 단위·목표차(±) 표기, '~해보세요' 어조
 """)
 
 USER_TMPL = textwrap.dedent("""\
+다음 데이터를 기반으로 [summary]/[plan]을 한국어로 작성하세요. 영어 사용 금지.
+영어 사용 시 한국어로 번역 후 답변하세요.
+
 ### 최근 {n}일 데이터
 {table}
 
@@ -245,6 +250,7 @@ USER_TMPL = textwrap.dedent("""\
 FIRST_TMPL = USER_TMPL          # 첫 코칭(=기존)
 
 FOLLOW_TMPL = textwrap.dedent("""\
+영어 사용 금지. 영어 사용 시 한국어로 번역 후 답변하세요.
 ### [지난 코칭 요약]
 {prev_msg}
 
@@ -268,8 +274,9 @@ FOLLOW_TMPL = textwrap.dedent("""\
 지표 | 현재값 | 영향
 {shap_lines}
 
-이번 데이터가 **지난 코칭을 잘 지켰는지 여부(지켰다/못 지켰다)**를 먼저 한 문장으로 판단하고,
+이번 데이터가 "지난 코칭을 잘 지켰는지 여부(지켰다/못 지켰다)"를 먼저 한 문장으로 판단하고,
 이어서는 [summary]/[plan] 형식으로 ‘구체적 개선점’을 제시하세요.
+영어 사용 시 한국어로 번역 후 답변하세요.
 """)
 
 
@@ -278,8 +285,8 @@ def chat(model_path: Path, sys: str, user: str) -> str:
     llm = Llama(
         model_path=str(model_path),
         n_ctx=4096,
-        temperature=0.9,
-        top_p=0.95,
+        temperature=0.3,
+        top_p=0.30,
         n_gpu_layers=0
     )
     res = llm.create_chat_completion(

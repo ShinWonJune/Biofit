@@ -4,8 +4,8 @@ import streamlit as st
 import requests
 from datetime import date
 
-st.set_page_config(page_title="BioFit 숙면 피드백", layout="centered")
-st.title("🌙 BioFit: 숙면 피드백 입력")
+# st.set_page_config(page_title="BioFit 숙면 피드백", layout="centered")
+# st.title("🌙 BioFit: 숙면 피드백 입력")
 
 uid = st.text_input("👤 회원 ID를 입력하세요", value="")
 selected_date = st.date_input("📅 날짜 선택", value=date.today())

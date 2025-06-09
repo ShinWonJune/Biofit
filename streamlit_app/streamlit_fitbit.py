@@ -19,7 +19,7 @@ page = st.sidebar.selectbox("📑 페이지 선택", ["데이터 & AI 예측", "
 
 if page == "숙면 피드백":
     # Feedback 앱을 iframe으로 임베드
-    FEEDBACK_URL = os.getenv("FEEDBACK_APP_URL", "http://localhost:8502")
+    FEEDBACK_URL = os.getenv("FEEDBACK_APP_URL", "http://172.28.8.101:8502")
     st.title("🌙 BioFit: 숙면 피드백 입력")
     components.iframe(f"{FEEDBACK_URL}", height=700, scrolling=True)
 
@@ -126,17 +126,18 @@ else:
             padding: 20px;
             border-radius: 12px;
             margin-top: 10px;
+            white-space: pre-wrap;
         ">
             <p style="
-                font-size: 24px;
+                font-size: 16px;
                 font-weight: bold;
                 line-height: 1.4;
                 color: #2e7d32;
-                text-align: center;
+                text-align: left;
                 margin: 0;
             ">
                 {message}
             </p>
         </div>
         """
-        components.html(html, height=150)
+        components.html(html, height=1000, scrolling=True)

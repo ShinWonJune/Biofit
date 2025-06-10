@@ -9,12 +9,10 @@ The contents of this `README.md` are always available on GitHub and can be edite
 The directory structure below must be followed, and must be periodically updated in order to be recognized for contributions in external activities such as presentations.
 
 ```
-/
-    /docs/
-    /Dockerfile  # or, /Containerfile
-    /README.md
-    /Usage.md
-    /...  # your own source codes
+.
+|
+|
+
 ```
 
 ## Guidelines

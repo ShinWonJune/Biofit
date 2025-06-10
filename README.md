@@ -1,8 +1,10 @@
 # C&S Project 2025 - Team G
 
-This repository is a collection of prerequisites and guidance for team project activities.
+HaruFit
+Smart Daily Routines based on personal data
 
-The contents of this `README.md` are always available on GitHub and can be edited.
+*This repository is a collection of prerequisites and guidance for team project activities.
+
 
 ## Directory Structure
 

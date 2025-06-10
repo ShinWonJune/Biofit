@@ -48,13 +48,13 @@ Team members are responsible for taking on tasks appropriate to their roles and 
 \
 Modern professionals often struggle with poor sleep quality and weight management due to irregular lifestyles and high work demands. These health issues can lead to decreased productivity and efficiency at the organizational level. \
 BioFit supports gym trainers by providing weekly AI-driven recommendations based on members’ wearable data. Recommendations help trainers promote sustained healthy habits among employees.\
-Matching workout partners or organizing group training sessions based on shared biorhythms is expected to encourage employees to maintain consistent exercise habits.\
+Matching workout partners or organizing group training sessions based on shared biorhythms is expected to encourage employees to maintain consistent exercise habits.
 
 **(How?) Tools and Methods** \
 \
 Wearable devices are used to continuously collect physical activity, heart rate, and sleep patterns. \
 Analyze the correlation between {exercise timing, activity level, and sleep timing} and {sleep quality} to identify optimal exercise and sleep windows that contribute to restorative sleep.\
-Evaluates the effectiveness of suggestions using biometric feedback. \
+Evaluates the effectiveness of suggestions using biometric feedback.
 
 
 

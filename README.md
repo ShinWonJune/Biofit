@@ -1,4 +1,4 @@
-# C&S Project 2025 - Team xxx
+# C&S Project 2025 - Team G
 
 This repository is a collection of prerequisites and guidance for team project activities.
 

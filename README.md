@@ -1,6 +1,6 @@
 # C&S Project 2025 - Team G
 
-HaruFit
+## HaruFit
 Smart Daily Routines based on personal data
 
 *This repository is a collection of prerequisites and guidance for team project activities.

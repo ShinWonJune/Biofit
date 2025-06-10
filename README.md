@@ -10,12 +10,29 @@ The directory structure below must be followed, and must be periodically updated
 
 ```
 .
-|
-|
-
+├── ./ai_service
+│   ├── ./ai_service/catboost_info
+│   │   ├── ./ai_service/catboost_info/learn
+│   │   └── ./ai_service/catboost_info/tmp
+│   ├── ./ai_service/models                  # pretrained LLM model saved here
+├── ./data_service
+│   ├── ./data_service/fitbit_csv            # if you want to test or manual DB, upload your csv that fixed format here
+├── ./db
+│   └── ./db/init
+│       └── ./db/init/@eaDir
+├── ./docs                                   # Fitbit auth information record and our team PPT here
+├── ./feedback_api                           # User side page
+└── ./streamlit_app                          # general pages
 ```
 
 ## Guidelines
+실행 방법:
+```
+unset DOCKER_HOST
+docker compose down
+docker compose up --build
+```
+
 
 Team members are responsible for taking on tasks appropriate to their roles and submitting them periodically to the appropriate repositories. At this time, please be aware of the following precautions.
 

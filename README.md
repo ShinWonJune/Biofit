@@ -43,12 +43,36 @@ The directory structure below must be followed, and must be periodically updated
 ## Guidelines
 실행 방법: 방법은 두가지 입니다. 
 
-1. github 에서 데이터를 다운받아서 진행하면 모델을 수동으로 받아 진행해야 합니다.
+🗂 Repository Layout
 ```
-unset DOCKER_HOST
-docker compose down
-docker compose up --build
+.
+├── ai_service/            ← CatBoost & Llama 3 inference
+├── data_service/          ← Fitbit fetch / preprocessing
+├── feedback_api/          ← store user feedback (FastAPI)
+├── group_service/         ← partner / group recommendation
+├── streamlit_app/         ← Streamlit front-end
+├── db/                    ← init SQL & seed CSVs
+├── docker-compose.yml
+└── README.md              ← (this file)
 ```
+
+
+# 1) clone & cd
+[git clone https://github.com/your-org/biofit.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git)
+cd biofit
+
+# 2) build & run all services
+docker compose up --build -d
+
+# 3) open in browser
+
+    • Main UI        : http://localhost:8501
+    • Feedback UI    : http://localhost:8502
+    • Data-service   : http://localhost:8000/docs
+    • Partner API    : http://localhost:8003/docs
+
+
+
 🌐 Docker Hub Images
 
 ```
@@ -74,33 +98,7 @@ docker compose up -d
 
 ---
 
-🗂 Repository Layout
-```
-.
-├── ai_service/            ← CatBoost & Llama 3 inference
-├── data_service/          ← Fitbit fetch / preprocessing
-├── feedback_api/          ← store user feedback (FastAPI)
-├── group_service/         ← partner / group recommendation
-├── streamlit_app/         ← Streamlit front-end
-├── db/                    ← init SQL & seed CSVs
-├── docker-compose.yml
-└── README.md              ← (this file)
-```
 
-
-# 1) clone & cd
-git clone https://github.com/your-org/biofit.git
-cd biofit
-
-# 2) build & run all services
-docker compose up --build -d
-
-# 3) open in browser
-
-    • Main UI        : http://localhost:8501
-    • Feedback UI    : http://localhost:8502
-    • Data-service   : http://localhost:8000/docs
-    • Partner API    : http://localhost:8003/docs
 
 
 

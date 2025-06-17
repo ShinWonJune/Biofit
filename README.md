@@ -1,7 +1,6 @@
 # C&S Project 2025 - Team G
 
-## HaruFit
-Smart Daily Routines based on personal data
+## BioFit
 
 *This repository is a collection of prerequisites and guidance for team project activities.
 
@@ -76,24 +75,6 @@ docker compose up -d
 
 ---
 
-## 📐 High-level Architecture
-```mermaid
-flowchart TD
-    subgraph Frontend
-      ST[Streamlit<br>app] --> FEED[Streamlit<br>feedback]
-    end
-    subgraph Core Services
-      DATA[FastAPI data-service] -->|clean data| PG[(Postgres)]
-      AI[ai_service<br>(CatBoost + LLM)] --> PG
-      GRP[group_service] --> PG
-      FEEDBACK[feedback-api] --> PG
-    end
-    ST -. read .-> PG
-    FEED --> FEEDBACK
-    PG -. volumes .-> Volume[(pgdata)]
-    classDef gray fill:#f7f7f7,stroke:#aaa
-    class Frontend,Core Services gray
-```
 🗂 Repository Layout
 .
 ├── ai_service/            ← CatBoost & Llama 3 inference

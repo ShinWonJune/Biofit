@@ -1,23 +1,39 @@
-# C&S Project 2025 - Team xxx
+# C&S Project 2025 - Team G
 
-This repository is a collection of prerequisites and guidance for team project activities.
+## HaruFit
+Smart Daily Routines based on personal data
 
-The contents of this `README.md` are always available on GitHub and can be edited.
+*This repository is a collection of prerequisites and guidance for team project activities.
+
 
 ## Directory Structure
 
 The directory structure below must be followed, and must be periodically updated in order to be recognized for contributions in external activities such as presentations.
 
 ```
-/
-    /docs/
-    /Dockerfile  # or, /Containerfile
-    /README.md
-    /Usage.md
-    /...  # your own source codes
+.
+├── ./ai_service
+│   ├── ./ai_service/catboost_info
+│   │   ├── ./ai_service/catboost_info/learn
+│   │   └── ./ai_service/catboost_info/tmp
+│   ├── ./ai_service/models                  # pretrained LLM model saved here
+├── ./data_service
+│   ├── ./data_service/fitbit_csv            # if you want to test or manual DB, upload your csv that fixed format here
+├── ./db
+│   └── ./db/init
+│       └── ./db/init/@eaDir
+├── ./docs                                   # Fitbit auth information record and our team PPT here
+├── ./feedback_api                           # User side page
+└── ./streamlit_app                          # general pages
 ```
 
 ## Guidelines
+실행 방법:
+```
+unset DOCKER_HOST
+docker compose down
+docker compose up --build
+```
 
 Team members are responsible for taking on tasks appropriate to their roles and submitting them periodically to the appropriate repositories. At this time, please be aware of the following precautions.
 
@@ -27,6 +43,20 @@ Team members are responsible for taking on tasks appropriate to their roles and 
 * Create a `Dockerfile (Containerfile)`: Project artifacts should be able to be packaged into one (or more) container image with the following command: `docker build --tag cs-project-2025-team-xxx .`
     - Build arguments and environment variable dependencies should not be present.
     - **Execution: Execution and usage for containerized images must be documented in `Usage.md` file.**
+
+**(Why?) Motivation** \
+\
+Modern professionals often struggle with poor sleep quality and weight management due to irregular lifestyles and high work demands. These health issues can lead to decreased productivity and efficiency at the organizational level. \
+BioFit supports gym trainers by providing weekly AI-driven recommendations based on members’ wearable data. Recommendations help trainers promote sustained healthy habits among employees.\
+Matching workout partners or organizing group training sessions based on shared biorhythms is expected to encourage employees to maintain consistent exercise habits.
+
+**(How?) Tools and Methods** \
+\
+Wearable devices are used to continuously collect physical activity, heart rate, and sleep patterns. \
+Analyze the correlation between {exercise timing, activity level, and sleep timing} and {sleep quality} to identify optimal exercise and sleep windows that contribute to restorative sleep.\
+Evaluates the effectiveness of suggestions using biometric feedback.
+
+
 
 ## Q&A
 

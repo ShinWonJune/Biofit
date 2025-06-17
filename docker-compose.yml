@@ -93,6 +93,24 @@ services:
     ports:
       - "8002:8002"
 
+  group_service:
+    build:
+      context: ./group_service
+      dockerfile: Dockerfile
+    container_name: biofit-group-service
+    depends_on:
+      - db
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+
+    volumes:
+      - ./group_service:/app
+
+    ports:
+      - "8003:8003"
+
 
 volumes:
   pgdata:

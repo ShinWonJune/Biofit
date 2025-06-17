@@ -10,6 +10,8 @@ RUN apt-get update && \
       libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip install pandas SQLAlchemy psycopg2-binary ics
+
 # 파이썬 라이브러리 설치
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt

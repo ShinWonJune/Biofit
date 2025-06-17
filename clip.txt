@@ -1,0 +1,25 @@
+.
+├── ./ai_service
+│   ├── ./ai_service/catboost_info
+│   │   ├── ./ai_service/catboost_info/learn
+│   │   └── ./ai_service/catboost_info/tmp
+│   ├── ./ai_service/@eaDir
+│   ├── ./ai_service/models
+│   │   └── ./ai_service/models/@eaDir
+│   └── ./ai_service/__pycache__
+├── ./data_service
+│   ├── ./data_service/@eaDir
+│   ├── ./data_service/fitbit_csv
+│   │   └── ./data_service/fitbit_csv/@eaDir
+│   └── ./data_service/__pycache__
+├── ./db
+│   ├── ./db/@eaDir
+│   └── ./db/init
+│       └── ./db/init/@eaDir
+├── ./docs
+│   └── ./docs/@eaDir
+├── ./@eaDir
+├── ./feedback_api
+└── ./streamlit_app
+
+22 directories

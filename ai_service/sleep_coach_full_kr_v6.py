@@ -10,6 +10,7 @@ import pandas as pd
 from catboost import CatBoostRegressor
 import shap
 from llama_cpp import Llama
+from token_log import log          # ➊ 새로 import
 
 from db_utils import read_table
 
@@ -216,7 +217,8 @@ SYS_PROMPT = textwrap.dedent("""\
 
 [summary] 좋은 점 2개·개선점 2개 (숫자 포함) 4~6문장
 [plan] 4줄: 운동(추천 시간대) / 환경 / 생활(취침·기상) / 식단
-숫자 옆에 단위·목표차(±) 표기, '~해보세요' 어조
+숫자 옆에 단위·목표차(±) 표기 해줘.
+영어 사용 시 한국어로 번역 후 자연스럽게 만든 뒤 답변하세요.
 """)
 
 USER_TMPL = textwrap.dedent("""\
@@ -244,6 +246,8 @@ USER_TMPL = textwrap.dedent("""\
 {shap_lines}
 
 위 정보를 바탕으로 [summary]/[plan] 작성하세요.
+마지막 문장에 반드시 "운동 시작시간: 20:00, 운동 종료시간: 20:30" 포멧으로 추가해주세요.
+영어 사용 시 한국어로 번역 후 자연스럽게 만든 뒤 답변하세요.
 """)
 
 # ── 코칭 템플릿 ──
@@ -274,25 +278,63 @@ FOLLOW_TMPL = textwrap.dedent("""\
 지표 | 현재값 | 영향
 {shap_lines}
 
-이번 데이터가 "지난 코칭을 잘 지켰는지 여부(지켰다/못 지켰다)"를 먼저 한 문장으로 판단하고,
+이번 데이터가 "지난 코칭을 잘 지켰는지 여부"를 먼저 한 문장으로 판단하고,
 이어서는 [summary]/[plan] 형식으로 ‘구체적 개선점’을 제시하세요.
-영어 사용 시 한국어로 번역 후 답변하세요.
+
+마지막 문장에 반드시 "운동 시작시간: 20:00, 운동 종료시간: 20:30" 포멧으로 추가해주세요
+영어 사용 시 한국어로 번역 후 자연스럽게 만든 뒤 답변하세요.
 """)
 
 
 
-def chat(model_path: Path, sys: str, user: str) -> str:
-    llm = Llama(
-        model_path=str(model_path),
-        n_ctx=4096,
+
+# ── vLLM(OpenAI 호환) HTTP 호출 버전 ──
+from openai import OpenAI      # ① 새 클라이언트 객체 사용
+
+client = OpenAI(
+    base_url="http://172.28.8.101:8282/v1",   # ② vLLM 서버 주소
+    api_key="token-abc123",                   # ③ 임의 토큰 – 서버와 일치
+)
+
+
+# def chat(sys: str, user: str) -> str:
+#     resp = client.chat.completions.create(
+#         model="./llama3",                     # served_model_name
+#         temperature=0.3,
+#         top_p=0.30,
+#         max_tokens=1024,
+#         messages=[
+#             {"role": "system", "content": sys},
+#             {"role": "user",   "content": user},
+#         ],
+#     )
+#     return resp.choices[0].message.content
+
+def chat(uid: str, sys: str, user: str) -> tuple[str, int, int]:
+    """content, prompt_tokens, completion_tokens 반환"""
+    resp = client.chat.completions.create(
+        model="./llama3",
         temperature=0.3,
         top_p=0.30,
-        n_gpu_layers=0
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": sys},
+            {"role": "user",   "content": user},
+        ],
     )
-    res = llm.create_chat_completion(
-        messages=[{"role": "user", "content": f"{sys}\n\n{user}"}]
-    )
-    return res["choices"][0]["message"]["content"].strip()
+
+    content = resp.choices[0].message.content
+    # vLLM-OpenAI 서버는 usage 필드를 제공합니다.
+    p_tok = resp.usage.prompt_tokens
+    c_tok = resp.usage.completion_tokens
+
+    # ➋ 콘솔 + CSV/DB 로깅
+    print(f"[TOKENS] {uid} | prompt={p_tok} | completion={c_tok}")
+    log(uid, p_tok, c_tok)
+
+    return content, p_tok, c_tok
+
+
 
 def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
     master = add_roll7(build_master(uid))
@@ -338,8 +380,8 @@ def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
         shap_lines="\n".join(f"{f} | {v:.1f} | {imp:+.2f}" for f,v,imp in shap_k)
     )
 
-    message = chat(model_path, SYS_PROMPT, prompt)
-
+    # message = chat(SYS_PROMPT, prompt)
+    message, p_tok, c_tok = chat(uid, SYS_PROMPT, prompt)
     print("\n=== 한국어 코칭 메시지 ===\n")
     print(message)
     return message 

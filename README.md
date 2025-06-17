@@ -114,14 +114,18 @@ docker compose up -d
 | group\_service     | `suhho/teamg:group-service`      | 8003 |
 
 🔧 Environment Variables
-| Variable (service)                         | Default                                            | Description                               |
-| ------------------------------------------ | -------------------------------------------------- | ----------------------------------------- |
-| `DATABASE_URL` (all)                       | `postgresql://biofit:biofitpass@db:5432/biofitdb`  | Postgres connection URI                   |
-| `MODEL_PATH` (ai\_service)                 | `/app/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf` | Llama 3 GGUF path in container            |
-| `WINDOW` (ai\_service)                     | `7`                                                | rolling-window days for CatBoost features |
-| `DATA_SERVICE_URL` (streamlit)             | `http://data:8001/fetch`                           | internal API endpoint                     |
-| `FEEDBACK_API_URL` (streamlit-feedback)    | `http://feedback-api:8001/feedback`                | feedback endpoint                         |
-| `OPENAI_BASE` / `OPENAI_KEY` (ai\_service) | see `.env` example                                 | vLLM / OpenAI-compatible proxy            |
+| Variable (service)          | Default                                           | Description                                |
+| --------------------------- | ------------------------------------------------- | ------------------------------------------ |
+| `DATABASE_URL` (all)        | `postgresql://biofit:biofitpass@db:5432/biofitdb` | Postgres connection URI                    |
+| `OPENAI_BASE` (ai\_service) | `http://llm-proxy:8282/v1`                        | **vLLM / OpenAI-compatible** REST endpoint |
+| `OPENAI_KEY` (ai\_service)  | `token-abc123`                                    | 아무 문자열(서버의 `--api-key` 값과 일치)              |
+| `WINDOW` (ai\_service)      | `7`                                               | rolling-window days for CatBoost features  |
+
+```
+OPENAI_BASE:  http://llm-proxy:8282/v1 
+OPENAI_KEY:   token-abc123              
+```
+
 
 💽 Initial Database
 All tables are boot-strapped via ./db/init/*.sql at first run

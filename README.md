@@ -57,19 +57,18 @@ The directory structure below must be followed, and must be periodically updated
 ```
 
 
-# 1) clone & cd
+1) clone & cd
 [git clone https://github.com/your-org/biofit.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git)
 cd biofit
 
-# 2) build & run all services
+2) build & run all services
 docker compose up --build -d
 
-# 3) open in browser
-
-    • Main UI        : http://localhost:8501
-    • Feedback UI    : http://localhost:8502
-    • Data-service   : http://localhost:8000/docs
-    • Partner API    : http://localhost:8003/docs
+3) open in browser
+• Main UI        : http://localhost:8501
+• Feedback UI    : http://localhost:8502
+• Data-service   : http://localhost:8000/docs
+• Partner API    : http://localhost:8003/docs
 
 
 

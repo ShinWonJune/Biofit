@@ -69,9 +69,9 @@ docker compose up --build -d
 ```
 3) open in browser \
 ```
-• Main UI        : http://localhost:8501 \
-• Feedback UI    : http://localhost:8502 \
-• Data-service   : http://localhost:8000/docs \
+• Main UI        : http://localhost:8501 
+• Feedback UI    : http://localhost:8502 
+• Data-service   : http://localhost:8000/docs 
 • Partner API    : http://localhost:8003/docs
 ```
 # Docker Build

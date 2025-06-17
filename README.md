@@ -127,16 +127,16 @@ OPENAI_KEY:   token-abc123
 ```
 
 
-💽 Initial Database
+💽 Initial Database \
 All tables are boot-strapped via ./db/init/*.sql at first run
 
-📊 Monitoring Token Usage
+📊 Monitoring Token Usage \
 ai_service logs token counts per request:
 ```
 [TOKENS] 23RK3S | prompt=836 | completion=162
 ```
 
-MIT License
+MIT License \
 © 2025 BioFit Development Team
 
 

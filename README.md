@@ -79,12 +79,12 @@ docker compose up --build -d
 
 ```
 docker login                    
-docker pull suhho/teamg:streamlit
-docker pull suhho/teamg:data
-docker pull suhho/teamg:streamlit-feedback
-docker pull suhho/teamg:feedback-api
-docker pull suhho/teamg:ai-service
-docker pull suhho/teamg:group-service
+docker pull suhho/biofit:streamlit
+docker pull suhho/biofit:data
+docker pull suhho/biofit:streamlit-feedback
+docker pull suhho/biofit:feedback-api
+docker pull suhho/biofit:ai-service
+docker pull suhho/biofit:group-service
 
 docker compose up -d
 ```
@@ -109,12 +109,12 @@ docker compose up -d
 | Service            | Docker Hub Tag                   | Port |
 | ------------------ | -------------------------------- | ---- |
 | db (Postgres 13)   | `postgres:13`                    | 5432 |
-| streamlit          | `suhho/teamg:streamlit`          | 8501 |
-| streamlit-feedback | `suhho/teamg:streamlit-feedback` | 8502 |
-| data\_service      | `suhho/teamg:data`               | 8000 |
-| feedback\_api      | `suhho/teamg:feedback-api`       | 8001 |
-| ai\_service        | `suhho/teamg:ai-service`         | 8002 |
-| group\_service     | `suhho/teamg:group-service`      | 8003 |
+| streamlit          | `suhho/biofit:streamlit`          | 8501 |
+| streamlit-feedback | `suhho/biofit:streamlit-feedback` | 8502 |
+| data\_service      | `suhho/biofit:data`               | 8000 |
+| feedback\_api      | `suhho/biofit:feedback-api`       | 8001 |
+| ai\_service        | `suhho/biofit:ai-service`         | 8002 |
+| group\_service     | `suhho/biofit:group-service`      | 8003 |
 
 🔧 Environment Variables
 | Variable (service)          | Default                                           | Description                                |

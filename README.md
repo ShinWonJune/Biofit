@@ -41,7 +41,6 @@ The directory structure below must be followed, and must be periodically updated
 ```
 
 ## Guidelines
-실행 방법: 방법은 두가지 입니다. 
 
 🗂 Repository Layout
 ```
@@ -56,9 +55,10 @@ The directory structure below must be followed, and must be periodically updated
 └── README.md              ← (this file)
 ```
 
+# Git Build
 
 1) clone & cd
-[git clone https://github.com/your-org/biofit.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git)
+[git clone https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git)
 cd biofit
 
 2) build & run all services
@@ -70,7 +70,7 @@ docker compose up --build -d
 • Data-service   : http://localhost:8000/docs \
 • Partner API    : http://localhost:8003/docs
 
-
+# Docker Build
 
 🌐 Docker Hub Images
 

@@ -49,8 +49,7 @@ unset DOCKER_HOST
 docker compose down
 docker compose up --build
 ```
-
-2. Docker 방식
+🌐 Docker Hub Images
 
 ```
 docker login                    # (이미 되어 있으면 생략)
@@ -105,11 +104,7 @@ docker compose up --build -d
 
 
 
-🌐 Docker Hub Images
 
-docker login
-docker compose pull
-docker compose up -d
 
 | Service            | Docker Hub Tag                   | Port |
 | ------------------ | -------------------------------- | ---- |

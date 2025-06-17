@@ -76,6 +76,7 @@ docker compose up -d
 ---
 
 🗂 Repository Layout
+```
 .
 ├── ai_service/            ← CatBoost & Llama 3 inference
 ├── data_service/          ← Fitbit fetch / preprocessing
@@ -85,7 +86,7 @@ docker compose up -d
 ├── db/                    ← init SQL & seed CSVs
 ├── docker-compose.yml
 └── README.md              ← (this file)
-
+```
 
 
 # 1) clone & cd
@@ -96,10 +97,11 @@ cd biofit
 docker compose up --build -d
 
 # 3) open in browser
-#    • Main UI        : http://localhost:8501
-#    • Feedback UI    : http://localhost:8502
-#    • Data-service   : http://localhost:8000/docs
-#    • Partner API    : http://localhost:8003/docs
+
+    • Main UI        : http://localhost:8501
+    • Feedback UI    : http://localhost:8502
+    • Data-service   : http://localhost:8000/docs
+    • Partner API    : http://localhost:8003/docs
 
 
 

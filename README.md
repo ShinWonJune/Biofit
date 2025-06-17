@@ -118,7 +118,7 @@ docker compose up -d
 | --------------------------- | ------------------------------------------------- | ------------------------------------------ |
 | `DATABASE_URL` (all)        | `postgresql://biofit:biofitpass@db:5432/biofitdb` | Postgres connection URI                    |
 | `OPENAI_BASE` (ai\_service) | `http://llm-proxy:8282/v1`                        | **vLLM / OpenAI-compatible** REST endpoint |
-| `OPENAI_KEY` (ai\_service)  | `token-abc123`                                    | 아무 문자열(서버의 `--api-key` 값과 일치)              |
+| `OPENAI_KEY` (ai\_service)  | `token-abc123`                                    | Server `--api-key` value                   |
 | `WINDOW` (ai\_service)      | `7`                                               | rolling-window days for CatBoost features  |
 
 ```

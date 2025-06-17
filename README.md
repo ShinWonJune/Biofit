@@ -58,7 +58,7 @@ The directory structure below must be followed, and must be periodically updated
 # Git Build
 
 1) clone & cd \
-[git clone https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git) \
+[git clone https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git](https://github.com/GIST-AI-Creative-Project-2025Spr/team-g.git) 
 ```
 cd biofit
 ```

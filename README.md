@@ -78,7 +78,7 @@ docker compose up --build -d
 🌐 Docker Hub Images
 
 ```
-docker login                    # (이미 되어 있으면 생략)
+docker login                    
 docker pull suhho/teamg:streamlit
 docker pull suhho/teamg:data
 docker pull suhho/teamg:streamlit-feedback

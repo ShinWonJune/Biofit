@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ai_service/sleep_coach_full_kr_v6.py
 from __future__ import annotations
-import re, textwrap, warnings, datetime
+import os, re, textwrap, warnings, datetime
 from pathlib import Path
 import logging
 
@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
 import shap
-from llama_cpp import Llama
 from token_log import log          # ➊ 새로 import
 
 from db_utils import read_table
@@ -20,6 +19,16 @@ logger = logging.getLogger(__name__)
 # ── 공통 변수 ──
 KEYS   = ["user_id"]
 TARGET = "efficiency"
+
+# §8.1 leakage fix: variables measured at the same sleep event as TARGET.
+# Including these as features lets the model learn near-tautological mappings
+# (e.g., total stage minutes ≈ time asleep ≈ efficiency × time_in_bed).
+# Excluded from get_X both as raw columns and as their *_roll7 derivatives.
+LEAK_VARS = [
+    "stage_deep", "stage_light", "stage_rem", "stage_wake",
+    "stage_deep_min", "stage_light_min", "stage_rem_min", "stage_wake_min",
+    "time_in_bed", "wake_count",
+]
 
 TIME_ONLY = re.compile(r"\d{1,2}:\d{2}:\d{2}$")          # AM/PM 삭제
 
@@ -161,20 +170,36 @@ def build_master(uid: str) -> pd.DataFrame:
     for df in daily[1:] + minute:
         master = master.merge(df, on=KEYS + ["date"], how="outer")
 
-    return master.sort_values("date").fillna(method="ffill")
+    return master.sort_values("date").ffill()
 
 # ── 전처리 & 모델 ──
 def add_roll7(df: pd.DataFrame) -> pd.DataFrame:
+    """7-day rolling mean of numeric columns.
+
+    §8.1 leakage fix: shift(1) excludes today from the rolling window so the
+    rolling features at row t aggregate only [t-7 .. t-1]. Without shift(1),
+    the original `rolling(window=7, min_periods=1).mean()` includes today's
+    value, which leaks the target into its own feature when t's TARGET is
+    used for training.
+    """
     out = df.copy()
     for col in out.select_dtypes("number"):
-        out[f"{col}_roll7"] = out[col].rolling(window=7, min_periods=1).mean()
+        out[f"{col}_roll7"] = out[col].shift(1).rolling(window=7, min_periods=1).mean()
     return out
 
 def get_X(df: pd.DataFrame) -> pd.DataFrame:
+    """Features for CatBoost.
+
+    §8.1 leakage fix: drop columns that are measured at the same sleep event
+    as TARGET (efficiency). Both raw LEAK_VARS and their *_roll7 derivatives
+    are excluded.
+    """
+    leak_full = LEAK_VARS + [f"{c}_roll7" for c in LEAK_VARS]
     return (
-        df.drop(columns=[TARGET] + KEYS, errors="ignore")
+        df.drop(columns=[TARGET] + KEYS + leak_full, errors="ignore")
           .select_dtypes("number")
-          .fillna(method="bfill").fillna(method="ffill")
+          .bfill()
+          .ffill()
     )
 
 def train_cat(df: pd.DataFrame) -> CatBoostRegressor:
@@ -292,8 +317,8 @@ FOLLOW_TMPL = textwrap.dedent("""\
 from openai import OpenAI      # ① 새 클라이언트 객체 사용
 
 client = OpenAI(
-    base_url="http://172.28.8.101:8282/v1",   # ② vLLM 서버 주소
-    api_key="token-abc123",                   # ③ 임의 토큰 – 서버와 일치
+    base_url=os.getenv("OPENAI_BASE", "http://10.38.38.40:8004/v1"),
+    api_key=os.getenv("OPENAI_KEY", "token-abc123"),
 )
 
 
@@ -336,14 +361,48 @@ def chat(uid: str, sys: str, user: str) -> tuple[str, int, int]:
 
 
 
-def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
+def main(uid: str, model_path: Path, window: int) -> dict:   # §2.1: dict 반환 (메시지 + 평가 메트릭)
     master = add_roll7(build_master(uid))
-    cat    = train_cat(master)
-    X      = get_X(master)
 
-    pred   = float(cat.predict(X.tail(1))[0])
-    shap_k = shap_top(cat, X)
-    recent = master.tail(window)
+    # §8.1 leakage fix: forecast TARGET = t+1 day's efficiency.
+    # The last row's target becomes NaN after shift(-1); we drop it from
+    # training but keep its features as the inference input for t+1 prediction.
+    master[TARGET]     = master[TARGET].shift(-1)
+    train_master       = master.dropna(subset=[TARGET])
+
+    # §2.1 train/test holdout: 마지막 7일을 test, 그 이전을 train으로 분리.
+    # 데이터 부족(< 14일) 시 holdout 건너뛰고 RMSE/MAE/baseline_rmse = None.
+    HOLDOUT_DAYS = 7
+    rmse_test, mae_test, baseline_rmse = None, None, None
+    if len(train_master) >= 2 * HOLDOUT_DAYS:
+        train_split   = train_master.iloc[:-HOLDOUT_DAYS]
+        test_split    = train_master.iloc[-HOLDOUT_DAYS:]
+        cat_eval      = train_cat(train_split)
+        X_test        = get_X(test_split)
+        y_test        = test_split[TARGET].values
+        y_pred        = cat_eval.predict(X_test)
+        rmse_test     = float(np.sqrt(np.mean((y_test - y_pred) ** 2)))
+        mae_test      = float(np.mean(np.abs(y_test - y_pred)))
+        # §2.1 baseline: 단순 평균 = train_split의 마지막 7일 efficiency 평균.
+        # CatBoost가 이 값을 정량적으로 이겨야 의미 있는 모델임.
+        baseline_pred = float(train_split[TARGET].tail(HOLDOUT_DAYS).mean())
+        baseline_rmse = float(np.sqrt(np.mean((y_test - baseline_pred) ** 2)))
+        print(f"[§2.1 holdout] test RMSE={rmse_test:.4f} | MAE={mae_test:.4f} | baseline RMSE={baseline_rmse:.4f}")
+    else:
+        print(f"[§2.1 holdout] skipped: only {len(train_master)} train days (<14)")
+
+    # 본 추론은 모든 학습 데이터로 (holdout 없이) — 가장 최신 정보까지 사용
+    cat                = train_cat(train_master)
+    X_train            = get_X(train_master)
+    X_inference        = get_X(master)
+
+    pred   = float(cat.predict(X_inference.tail(1))[0])
+    shap_k = shap_top(cat, X_train)
+    recent = train_master.tail(window)
+
+    # §2.1 metadata for predictions row
+    data_window_end     = train_master["date"].max() if "date" in train_master.columns else None
+    feature_set_version = "v6_leak_fixed_t+1_forecast"
 
     # 활동 시각대
     act_hr = read_activity_hourly_db("activity_1min", uid)
@@ -355,8 +414,8 @@ def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
     avg_sleep = _safe_mode(swin["sleep_time"].dt.time, datetime.time(23, 0))
     avg_wake  = _safe_mode(swin["wake_time"].dt.time,  datetime.time(7, 0))
 
-    # 변화율
-    prev   = master.iloc[-2 * window:-window]
+    # 변화율 (§8.1: train_master 사용 — t+1 NaN 행 제외된 데이터로 변화율 계산)
+    prev   = train_master.iloc[-2 * window:-window]
     change = []
     for col in ["steps", "total", TARGET]:
         if col in recent and col in prev and prev[col].mean() != 0:
@@ -384,7 +443,16 @@ def main(uid: str, model_path: Path, window: int) -> str:   # 반환형 str
     message, p_tok, c_tok = chat(uid, SYS_PROMPT, prompt)
     print("\n=== 한국어 코칭 메시지 ===\n")
     print(message)
-    return message 
+
+    # §2.1 dict 반환: app_ai.py가 message + 평가 메트릭을 함께 적재할 수 있도록
+    return {
+        "message":             message,
+        "rmse_test":           rmse_test,
+        "mae_test":            mae_test,
+        "baseline_rmse":       baseline_rmse,
+        "data_window_end":     data_window_end,
+        "feature_set_version": feature_set_version,
+    }
 
 
 if __name__ == "__main__":

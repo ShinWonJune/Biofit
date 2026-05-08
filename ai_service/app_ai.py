@@ -36,26 +36,36 @@ class Req(BaseModel):
 def predict(req: Req):
     run_id = uuid.uuid4()
 
-
-
-
     try:
-        message = coach_main(uid=req.uid,        # ← 메시지 수신
-                             model_path=MODEL_PATH,
-                             window=WINDOW)
+        # §2.1: coach_main now returns a dict with message + eval metrics.
+        result = coach_main(uid=req.uid,
+                            model_path=MODEL_PATH,
+                            window=WINDOW)
     except Exception as e:
         logger.exception("predict 실패")
         raise HTTPException(status_code=500, detail=f"coach_main error: {e}")
 
+    message             = result["message"]
+    rmse_test           = result.get("rmse_test")
+    mae_test            = result.get("mae_test")
+    baseline_rmse       = result.get("baseline_rmse")
+    data_window_end     = result.get("data_window_end")
+    feature_set_version = result.get("feature_set_version")
+
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
-            f"""INSERT INTO {DB_TABLE}(uid, run_id, note, message)
-                VALUES (%s, %s, %s, %s)""",
-            (req.uid, str(run_id), "run completed", message)
+            f"""INSERT INTO {DB_TABLE}(
+                  uid, run_id, note, message,
+                  rmse_test, mae_test, data_window_end, feature_set_version
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (req.uid, str(run_id), "run completed", message,
+             rmse_test, mae_test, data_window_end, feature_set_version)
         )
         conn.commit()
 
-    return {"status": "ok",
-            "run_id": str(run_id),
-            "message_preview": message[:120] + "..."}
+    return {"status":           "ok",
+            "run_id":            str(run_id),
+            "rmse_test":         rmse_test,
+            "baseline_rmse":     baseline_rmse,
+            "message_preview":   message[:120] + "..."}
 

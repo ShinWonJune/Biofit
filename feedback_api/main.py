@@ -1,10 +1,11 @@
 # feedback_api/main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, MetaData, Table, Column, String, Date, Integer, text
-from sqlalchemy.exc import IntegrityError
-from typing import Optional
+from sqlalchemy.exc import IntegrityError, ProgrammingError
+from typing import Optional, List
+import datetime as _dt
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -111,3 +112,50 @@ def submit_prediction_feedback(run_id: str, fb: PredictionFeedback):
         "run_id":      run_id,
         "rated_by":    fb.rated_by,
     }
+
+
+# ─────────────────────────────────────────────
+# Phase 4 §9.1 contract: 회원 체감 수면 점수 조회 endpoint
+# ai_service가 DB 직접 access (read_table('{uid}_feedback')) 대신 이 endpoint로 fetch.
+# @contract: shared with ai_service. Phase 5+ biofit-contracts 패키지로 추출 예정.
+# ─────────────────────────────────────────────
+class FeedbackRow(BaseModel):
+    user_id:     str
+    date:        _dt.date
+    sleep_score: int
+    created_at:  Optional[_dt.datetime] = None
+
+
+@app.get("/users/{uid}/feedback", response_model=List[FeedbackRow])
+def get_user_feedback(
+    uid: str,
+    from_date: Optional[_dt.date] = Query(None, description="시작 날짜 (포함, ISO YYYY-MM-DD)"),
+    to_date:   Optional[_dt.date] = Query(None, description="종료 날짜 (포함)"),
+):
+    """동적 `{uid}_feedback` 테이블에서 회원 체감 점수를 조회. 기간 미지정 시 전체.
+
+    테이블 부재(회원이 한 번도 입력 안 함) 시 200 + 빈 리스트. 호출자(ai_service)가
+    legacy fallback과 동일하게 빈 DataFrame으로 처리.
+    """
+    table_name = f"{uid}_feedback"
+    where_parts = ["user_id = :uid"]
+    params = {"uid": uid}
+    if from_date is not None:
+        where_parts.append("date >= :from_date")
+        params["from_date"] = from_date
+    if to_date is not None:
+        where_parts.append("date <= :to_date")
+        params["to_date"] = to_date
+    where_sql = " AND ".join(where_parts)
+
+    sql = text(f'SELECT user_id, date, sleep_score FROM "{table_name}" WHERE {where_sql} ORDER BY date ASC')
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+    except ProgrammingError:
+        # 테이블 부재 — 회원이 한 번도 feedback 입력 안 함. 빈 리스트로 정상 응답.
+        return []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"feedback query 실패: {e}")
+
+    return [FeedbackRow(**dict(r)) for r in rows]

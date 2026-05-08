@@ -120,6 +120,11 @@ services:
       LLM_MODEL_NAME: openai/gpt-oss-20b
       # Phase 3 §9.1 expand: 1=fitbit_daily_features에서 read, 0=기존 {uid}_* 테이블 (default 0 = 옵트아웃)
       USE_NORMALIZED_FEATURES: "0"
+      # Phase 4 §9.1 contract: HTTP API 경유 (1=data_service /users/{uid}/features, 0=DB 직접)
+      USE_DATA_SERVICE_API: "0"
+      USE_FEEDBACK_API_HTTP: "0"
+      DATA_SERVICE_BASE: "http://data:8001"
+      FEEDBACK_API_BASE: "http://feedback-api:8001"
 
     volumes:
       - ./ai_service:/app

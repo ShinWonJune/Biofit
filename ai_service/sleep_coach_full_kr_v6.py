@@ -7,11 +7,49 @@ import logging
 
 import numpy as np
 import pandas as pd
+import requests
 from catboost import CatBoostRegressor
 import shap
 from token_log import log          # ➊ 새로 import
 
 from db_utils import read_table
+
+# Phase 4 §9.1 contract: 다른 서비스 endpoint base URL.
+# 컨테이너 간 docker DNS이지만 env로 override 가능 (운영 시 reverse proxy 가능).
+DATA_SERVICE_BASE  = os.getenv("DATA_SERVICE_BASE",  "http://data:8001")
+FEEDBACK_API_BASE  = os.getenv("FEEDBACK_API_BASE",  "http://feedback-api:8001")
+HTTP_TIMEOUT_SEC   = float(os.getenv("HTTP_API_TIMEOUT_SEC", "10"))
+
+
+# Phase 4: data_service /users/{uid}/features 응답을 한 번 fetch해 *프로세스 단위 캐시*.
+# build_master 안에서 read_daily_db가 4번 호출되는데 매번 HTTP fetch는 비효율적.
+# /predict 한 호출 안에서 같은 uid는 같은 데이터를 보므로 안전.
+_FEATURES_HTTP_CACHE: dict[str, pd.DataFrame] = {}
+
+
+def _fetch_features_via_api(uid: str) -> pd.DataFrame:
+    """data_service의 /users/{uid}/features endpoint 호출 (Phase 4 §9.1 contract).
+
+    실패 시 빈 DataFrame 반환 — 호출자가 legacy path로 fallback.
+    """
+    if uid in _FEATURES_HTTP_CACHE:
+        return _FEATURES_HTTP_CACHE[uid]
+    url = f"{DATA_SERVICE_BASE}/users/{uid}/features"
+    try:
+        resp = requests.get(url, params={"window": 1000}, timeout=HTTP_TIMEOUT_SEC)
+        resp.raise_for_status()
+        rows = resp.json()
+    except Exception as e:
+        logger.warning(f"[Phase 4] data_service API 호출 실패 → legacy fallback: {e}")
+        _FEATURES_HTTP_CACHE[uid] = pd.DataFrame()
+        return _FEATURES_HTTP_CACHE[uid]
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    _FEATURES_HTTP_CACHE[uid] = df
+    logger.info(f"[Phase 4] data_service API: fetched {len(df)} feature rows for uid={uid}")
+    return df
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 logger = logging.getLogger(__name__)
@@ -70,6 +108,27 @@ def _combine_dt(df: pd.DataFrame, dcol="date", tcol="time") -> pd.DatetimeIndex:
 
 # ── DB 로 읽어오는 함수들 ──
 def read_feedback_db(uid: str) -> pd.DataFrame:
+    """회원 체감 점수 조회.
+
+    Phase 4 §9.1 contract: USE_FEEDBACK_API_HTTP=1이면 feedback_api의 HTTP endpoint 호출.
+    Legacy (default): 동적 `{uid}_feedback` 테이블 직접 SELECT.
+    """
+    if os.getenv("USE_FEEDBACK_API_HTTP", "0") == "1":
+        url = f"{FEEDBACK_API_BASE}/users/{uid}/feedback"
+        try:
+            resp = requests.get(url, timeout=HTTP_TIMEOUT_SEC)
+            resp.raise_for_status()
+            rows = resp.json()
+            df_api = pd.DataFrame(rows, columns=["user_id", "date", "sleep_score"])
+            if df_api.empty:
+                return df_api
+            df_api["date"] = pd.to_datetime(df_api["date"], errors="coerce")
+            logger.info(f"[Phase 4] feedback_api: {len(df_api)} rows for uid={uid}")
+            return df_api.groupby(["user_id", "date"], as_index=False)["sleep_score"].mean()
+        except Exception as e:
+            logger.warning(f"[Phase 4] feedback_api 호출 실패 → legacy fallback: {e}")
+            # fall through to legacy
+
     try:
         df = read_table(f"{uid}_feedback", where=f"user_id = '{uid}'")
         print("[DEBUG] feedback DB 읽기 성공")
@@ -88,28 +147,56 @@ _NORMALIZED_COLUMN_MAP = {
     "azm":           ["azm_total", "azm_fatburn", "azm_cardio"],
 }
 
+# fitbit_daily_features의 prefix 있는 컬럼명을 *기존 build_master agg dict가 사용하는*
+# CSV/legacy 컬럼명으로 reverse rename (Phase 3 보강, Phase 4 노출).
+# 매핑 없는 카테고리는 그대로 통과.
+_NORMALIZED_COLUMN_LEGACY_RENAME = {
+    "azm": {"azm_total": "total", "azm_fatburn": "fatburn", "azm_cardio": "cardio"},
+}
+
+
+def _apply_legacy_rename(table_suffix: str, df: pd.DataFrame) -> pd.DataFrame:
+    rename = _NORMALIZED_COLUMN_LEGACY_RENAME.get(table_suffix)
+    return df.rename(columns=rename) if rename else df
+
 
 def read_daily_db(table_suffix: str, agg: dict[str, str], uid: str) -> pd.DataFrame:
-    """일별 집계 데이터 조회.
+    """일별 집계 데이터 조회. 3-tier 분기 (우선순위 순).
 
-    §9.1 expand: USE_NORMALIZED_FEATURES=1이면 fitbit_daily_features에서,
-    아니면 기존 동적 `{uid}_{table_suffix}` 테이블에서 읽음 (default = legacy).
+    Phase 4 §9.1 contract: USE_DATA_SERVICE_API=1이면 data_service의 HTTP endpoint 호출.
+    Phase 3 §9.1 expand:    USE_NORMALIZED_FEATURES=1이면 fitbit_daily_features 직접 SELECT.
+    Legacy (default):       기존 동적 `{uid}_{table_suffix}` 테이블 직접 SELECT.
+
+    HTTP 또는 정규화 path가 *데이터 부재*를 반환하면 legacy로 자동 fallback.
+    결합 지점이 *DB 스키마 → API 계약*으로 이동한 마지막 단계.
     """
-    if os.getenv("USE_NORMALIZED_FEATURES", "0") == "1":
-        cols = _NORMALIZED_COLUMN_MAP.get(table_suffix)
-        if cols is not None:
-            df = read_table("fitbit_daily_features", where=f"user_id = '{uid}'")
-            keep = [c for c in cols if c in df.columns]
-            if not keep:
-                logger.warning(f"[§9.1] fitbit_daily_features missing all expected cols for suffix={table_suffix} → legacy fallback")
-            else:
-                df = df[KEYS + ["date"] + keep].copy()
-                df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
-        else:
-            logger.info(f"[§9.1] no normalized mapping for suffix={table_suffix} → legacy fallback")
+    cols = _NORMALIZED_COLUMN_MAP.get(table_suffix)
 
-    # legacy path (default)
+    # ── Phase 4: HTTP API path (최우선) ──
+    if os.getenv("USE_DATA_SERVICE_API", "0") == "1" and cols is not None:
+        df_all = _fetch_features_via_api(uid)
+        if not df_all.empty:
+            keep = [c for c in cols if c in df_all.columns]
+            if keep:
+                df = df_all[KEYS + ["date"] + keep].copy()
+                df = _apply_legacy_rename(table_suffix, df)
+                return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
+            logger.warning(f"[Phase 4] API response missing cols for suffix={table_suffix} → fallback")
+        else:
+            logger.info(f"[Phase 4] API empty for uid={uid} → fallback")
+
+    # ── Phase 3: 정규화 테이블 직접 SELECT path ──
+    if os.getenv("USE_NORMALIZED_FEATURES", "0") == "1" and cols is not None:
+        df = read_table("fitbit_daily_features", where=f"user_id = '{uid}'")
+        keep = [c for c in cols if c in df.columns]
+        if keep:
+            df = df[KEYS + ["date"] + keep].copy()
+            df = _apply_legacy_rename(table_suffix, df)
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
+        logger.warning(f"[§9.1] fitbit_daily_features missing all expected cols for suffix={table_suffix} → legacy fallback")
+
+    # ── Legacy path (default) ──
     tbl = f"{uid}_{table_suffix}"
     df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["date"] = pd.to_datetime(df["date"], errors="coerce")

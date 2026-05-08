@@ -273,6 +273,53 @@ DATABASE_URL=postgresql://biofit:biofitpass@localhost:5432/biofitdb \
 
 이후 Phase 5 (within-subject 실험·주관·객관 격차)·Phase 6 (PIPA·OAuth·의료 면책)·Phase 7 (비즈니스 민감도)은 [`docs/project_analysis.md`](docs/project_analysis.md) §10 참조.
 
+### Phase 4 (2026-05-09) — MSA 경계 강화 (HTTP API 경유)
+
+Phase 1·2·3가 *모델 정직성·메타·DB 정규화 expand*를 다뤘다면 Phase 4는 **서비스 간 결합 지점을 DB 스키마 → API 계약으로 이동**. 분석 문서 §9.1 보완 논리의 마지막 단계.
+
+| § | 작업 | 변경 위치 | 검증 |
+|---|------|---------|------|
+| §9.1 contract (HTTP) | `data_service`에 `GET /users/{uid}/features?window=N` endpoint + Pydantic `FeatureRow` | `data_service/app.py` | curl `localhost:8000/users/23RK3S/features?window=7` → 7 rows JSON ✅ |
+| §9.1 contract (HTTP) | `feedback_api`에 `GET /users/{uid}/feedback` endpoint + Pydantic `FeedbackRow` | `feedback_api/main.py` | curl `localhost:8001/users/23RK3S/feedback` → 516 rows JSON ✅ |
+| §9.1 client | `ai_service`의 `read_daily_db`·`read_feedback_db`에 *3-tier 분기* + 자동 fallback | `ai_service/sleep_coach_full_kr_v6.py` | `USE_DATA_SERVICE_API=1` 옵트인 시 endpoint 경유, baseline 이김 ✅ |
+| §9.1 보강 | Phase 3에서 누락된 *azm reverse rename* (`azm_total → total`) 추가 | `sleep_coach_full_kr_v6.py:_apply_legacy_rename` | KeyError 회피 ✅ |
+
+#### 옵트인 우선순위 (3-tier)
+
+```
+USE_DATA_SERVICE_API=1   ← Phase 4: HTTP API 경유 (data_service)
+   ↓ 실패·empty 시 fallback
+USE_NORMALIZED_FEATURES=1   ← Phase 3: fitbit_daily_features 직접 SELECT
+   ↓ 실패·empty 시 fallback
+(default 0)              ← Legacy: {uid}_* 동적 테이블 직접 SELECT
+```
+
+#### 사용 예시
+
+```bash
+# data_service features endpoint (window 1~1000일)
+curl http://localhost:8000/users/23RK3S/features?window=7
+# → [{"user_id":"23RK3S","date":"2025-05-14","efficiency":96.0,...}, ...]
+
+# feedback_api feedback endpoint (기간 옵션)
+curl "http://localhost:8001/users/23RK3S/feedback?from_date=2024-01-01&to_date=2024-01-31"
+
+# ai_service 옵트인 (docker-compose.yml의 ai_service.environment 변경 후 up)
+USE_DATA_SERVICE_API=1
+USE_FEEDBACK_API_HTTP=1
+```
+
+#### 알려진 한계 — Phase 5 contract에서 보강 예정
+
+옵트인 시 RMSE가 legacy 대비 약 2배(1.81 → 3.80) — `fitbit_daily_features`에 *일별 집계만* 정규화돼서 *minute-level features(`heart_rate_1min`, `activity_1min`, `hrv`)와 `sleep_detail` 단계 분포*가 빠진 결과. 모델 features 일부 손실 → 일반화 오차 증가. **baseline(3.92)은 여전히 이김** → 옵트인 자체는 의미 있는 동작. Phase 5에서 (1) minute summary를 daily features에 집계 추가 + (2) data_service에 minute summary endpoint 별도 추가로 보강 예정.
+
+#### Phase 5 prep — 다음 단계 (~1주, ~10시간)
+
+- §9.4 vLLM health/fallback (Phase 4 spec에서 Non-goal로 분리됨, Phase 5에서 진행)
+- §9.8 OpenTelemetry trace + structlog
+- §5.1 LLM 출력 JSON schema + 폴백
+- §9.1 contract 보강: minute-level summary endpoint + fitbit_daily_features 컬럼 확장
+
 ---
 
 ## Team

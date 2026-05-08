@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # ai_service/app_ai.py
 from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Any, List
+from datetime import datetime, date
 import uuid, os, logging, json
 from pathlib import Path
 
@@ -149,4 +150,75 @@ def predict(
             logger.warning(f"[§9.6] idempotency_log INSERT 실패: {e}")
 
     return response
+
+
+# ─────────────────────────────────────────────
+# Phase 5 §9.1 contract: ai_service exposes — 외부 클라이언트(streamlit·group_service)가
+# *DB 직접 SELECT 대신* 이 endpoint로 prediction 결과를 조회.
+# 결합 지점이 *predictions 테이블 스키마* → *명시적 HTTP 계약 + Pydantic*으로 이동.
+# @contract: shared with streamlit, group_service. Phase 6+ extract to biofit-contracts.
+# ─────────────────────────────────────────────
+class PredictionResponse(BaseModel):
+    uid:                   str
+    run_id:                str
+    note:                  Optional[str]      = None
+    message:               str
+    created_at:            Optional[datetime] = None
+    rmse_test:             Optional[float]    = None
+    mae_test:              Optional[float]    = None
+    data_window_end:       Optional[date]     = None
+    feature_set_version:   Optional[str]      = None
+    model_version:         Optional[str]      = None
+    prompt_hash:           Optional[str]      = None
+    llm_params:            Optional[Any]      = None   # JSONB
+    recommended_slot_json: Optional[Any]      = None   # JSONB list
+
+
+@app.get("/predictions/{run_id}", response_model=PredictionResponse)
+def get_prediction(run_id: str):
+    """Phase 5 §9.1 contract: predictions 단일 row 조회 endpoint.
+
+    psycopg2가 JSONB 컬럼을 dict/list로 자동 변환하므로 그대로 통과.
+    404: predictions에 해당 run_id 없음.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT uid, run_id, note, message, created_at,
+                       rmse_test, mae_test, data_window_end, feature_set_version,
+                       model_version, prompt_hash, llm_params, recommended_slot_json
+                FROM {DB_TABLE} WHERE run_id = %s""",
+            (run_id,),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"run_id={run_id} not found in predictions")
+
+    cols = ["uid", "run_id", "note", "message", "created_at",
+            "rmse_test", "mae_test", "data_window_end", "feature_set_version",
+            "model_version", "prompt_hash", "llm_params", "recommended_slot_json"]
+    d = dict(zip(cols, row))
+    # JSONB 필드가 string으로 와도 dict/list로 보정 (드라이버 차이 흡수)
+    for k in ("llm_params", "recommended_slot_json"):
+        if isinstance(d.get(k), str):
+            try:
+                d[k] = json.loads(d[k])
+            except Exception:
+                pass
+
+    return PredictionResponse(
+        uid=str(d["uid"]),
+        run_id=str(d["run_id"]),
+        note=d.get("note"),
+        message=d.get("message") or "",
+        created_at=d.get("created_at"),
+        rmse_test=d.get("rmse_test"),
+        mae_test=d.get("mae_test"),
+        data_window_end=d.get("data_window_end"),
+        feature_set_version=d.get("feature_set_version"),
+        model_version=d.get("model_version"),
+        prompt_hash=d.get("prompt_hash"),
+        llm_params=d.get("llm_params"),
+        recommended_slot_json=d.get("recommended_slot_json"),
+    )
 

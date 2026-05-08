@@ -178,12 +178,34 @@ if st.button("🤖 AI 추론 실행", disabled=disabled):
 
     st.success("✅ AI 추론 완료")
 
-    # DB에서 최신 message 조회
-    df = pd.read_sql("""
-        SELECT message FROM predictions
-        WHERE uid = %s ORDER BY created_at DESC LIMIT 1
-    """, conn, params=(uid.strip(),))
-    message = df["message"].iloc[0]
+    # Phase 5 §9.1 contract: 옵트인 (USE_PREDICTIONS_API=1) 시 ai_service의
+    # GET /predictions/{run_id} API로 결과 조회. default(0) 또는 API 실패 시
+    # 기존 psycopg2 SELECT로 fallback — 결합 지점이 *predictions 테이블 스키마*에서
+    # *명시적 HTTP 계약*으로 이동.
+    ai_response = r.json()
+    run_id      = ai_response.get("run_id")
+    message     = None
+    use_api     = os.getenv("USE_PREDICTIONS_API", "0") == "1"
+
+    if use_api and run_id:
+        try:
+            ai_base   = AI_URL.rsplit('/', 1)[0]   # 'http://ai_service:8000'
+            api_resp  = requests.get(f"{ai_base}/predictions/{run_id}", timeout=10)
+            if api_resp.status_code == 200:
+                message = api_resp.json().get("message")
+                logging.info(f"[Phase 5] ai_service /predictions/{run_id} API 사용")
+            else:
+                logging.warning(f"[Phase 5] /predictions/{run_id} status={api_resp.status_code} → DB fallback")
+        except Exception as e:
+            logging.warning(f"[Phase 5] /predictions API 실패 → DB SELECT fallback: {e}")
+
+    if message is None:
+        # Legacy path: psycopg2로 predictions 직접 SELECT (Phase 5 commit 후에도 default)
+        df = pd.read_sql("""
+            SELECT message FROM predictions
+            WHERE uid = %s ORDER BY created_at DESC LIMIT 1
+        """, conn, params=(uid.strip(),))
+        message = df["message"].iloc[0]
 
     # 카드 HTML 생성 & 세션에 저장
     st.session_state.pred_html = build_pred_card(message)

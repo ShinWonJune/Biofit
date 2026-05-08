@@ -320,6 +320,45 @@ USE_FEEDBACK_API_HTTP=1
 - §5.1 LLM 출력 JSON schema + 폴백
 - §9.1 contract 보강: minute-level summary endpoint + fitbit_daily_features 컬럼 확장
 
+### Phase 5 (2026-05-09) — 나머지 서비스 MSA 경계 완성
+
+Phase 4가 *data_service·feedback_api*의 외부 contract를 강화했다면 Phase 5는 *ai_service·group_service*의 외부 contract와 streamlit의 클라이언트 측 API 전환을 완성. 분석 문서 §9.1 To-Be의 *나머지 30%* 진척 + §6 (`group_service`가 uid를 무시하던 결함) fix.
+
+| § | 작업 | 변경 위치 | 검증 |
+|---|------|---------|------|
+| §9.1 contract | `ai_service GET /predictions/{run_id}` + `PredictionResponse` Pydantic (13 필드) | `ai_service/app_ai.py` | curl 200 (12 필드 JSON) / 404 (fake run_id) ✅ |
+| §6 fix | `group_service GET /recommendations/{uid}` — *실제 회원 preferred_slots 조회*. 미등록 시 hardcoded fallback (`fallback_used=True`로 명시) | `group_service/main.py` | `/recommendations/U001` → fallback_used=False, 실제 슬롯 사용 ✅ |
+| §9.1 client | streamlit이 `psycopg2 직접 SELECT` 대신 `ai_service GET /predictions/{run_id}` 호출 (옵트인 `USE_PREDICTIONS_API=1`) | `streamlit_app/streamlit_fitbit.py` | streamlit 컨테이너에서 옵트인 시뮬레이션 — HTTP 200, message 정상 ✅ |
+
+#### 사용 예시
+
+```bash
+# ai_service GET endpoint (외부 클라이언트가 prediction 결과 조회)
+curl http://localhost:8002/predictions/<run_id>
+# → {"uid":"23RK3S","run_id":"...","model_version":"phase2_§8.2_window_regression",
+#    "rmse_test":1.8068,"recommended_slot_json":[...],"message":"..."}
+
+# group_service GET endpoint (uid의 *실제* preferred_slots 사용)
+curl http://localhost:8003/recommendations/U001
+# → {"uid":"U001","user_slots_used":[["10:00:00","11:00:00"],...],"fallback_used":false,
+#    "partners":[{"user_id":"U002","name":"Jenney","overlap_minutes":60}, ...]}
+
+curl http://localhost:8003/recommendations/23RK3S
+# → fallback_used=True (preferred_slots 미등록 회원). hardcoded CURRENT_USER_SLOTS 사용
+
+# streamlit 옵트인 (docker-compose.yml의 streamlit.environment에서 USE_PREDICTIONS_API="1"로 변경 후 up)
+USE_PREDICTIONS_API=1
+```
+
+#### Phase 6+ prep — 다음 단계
+
+- **§9.4 vLLM health/fallback** (Phase 4 spec에서 Non-goal로 분리됨)
+- **§9.8 OpenTelemetry trace + structlog**
+- **§5.1 LLM 출력 JSON schema + 폴백**
+- **§9.1 contract *완료* (legacy DB 직접 access 폐기)** — 옵트인 dual-path를 default로 전환 + legacy path 삭제. *운영 검증 후* 진행
+- **shared `biofit-contracts` 패키지** — Phase 4·5의 인라인 복제(FeatureRow·FeedbackRow·PredictionResponse·RecommendationResponse 등)를 PyPI/git submodule 패키지로 추출
+- **minute-level summary 정규화** (Phase 4의 RMSE 손실 해소)
+
 ---
 
 ## Team

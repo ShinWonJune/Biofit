@@ -34,6 +34,11 @@ services:
     environment:
       DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
       DATA_SERVICE_URL: http://data:8001/fetch
+      AI_URL: http://ai_service:8000/predict
+      GROUP_URL: http://group_service:8003/predict
+      # Phase 5 §9.1 contract: 1=ai_service GET /predictions/{run_id} API 사용,
+      # 0=psycopg2 직접 SELECT (default 0 = 옵트아웃, fallback path 그대로 유지)
+      USE_PREDICTIONS_API: "0"
     volumes:
       - ./streamlit_app:/app
     ports:

@@ -219,6 +219,60 @@ DATABASE_URL=postgresql://biofit:biofitpass@localhost:5432/biofitdb \
 
 Phase 3 작업 시 본 Phase 2의 `predictions` 컬럼·`predictions_feedback` 테이블 모두 그대로 유지(외래키 호환).
 
+### Phase 3 (2026-05-09) — Alembic + 정규화 expand + 멱등성 / 상태 머신
+
+Phase 1·2의 *모델 정직성 + 메타·평가 루프* 위에 **MSA 데이터 흐름의 운영형 토대**를 깐 단계. *모든 변경은 추가만*이고 *기존 동적 `{uid}_*` 테이블·`predictions` 흐름은 무영향*.
+
+| § | 작업 | 변경 위치 | 검증 |
+|---|------|---------|------|
+| §9.7 | Alembic 마이그레이션 도구 + `migrate` 1회성 컨테이너 | `ai_service/alembic.ini`, `migrations/env.py`, `migrations/versions/001~003`, `docker-compose.yml`(migrate 서비스, db healthcheck, ai_service depends_on) | `alembic upgrade head` 자동 실행 후 ai_service 기동. baseline 001은 빈 마이그레이션으로 *기존 schema 위에 alembic_version만* 추가 |
+| §9.1 | `fitbit_daily_features` 정규화 wide-format 테이블 (expand 단계) | `migrations/versions/002_phase3_daily_features.py` (테이블 신규), `sleep_coach_full_kr_v6.py:read_daily_db` (env flag 분기), `data_service/csv_to_db.py:_maybe_dual_write_normalized` (env flag dual-write) | `USE_NORMALIZED_FEATURES=1`·`DUAL_WRITE_NORMALIZED=1` 옵트인 시에만 활성. **default 0** = 기존 동적 테이블 흐름 유지 |
+| §9.6 | `model_runs` 상태 머신 + `idempotency_log` 멱등성 키 | `migrations/versions/003_phase3_runs.py` (두 테이블 신규), `app_ai.py:_update_run_status`, `app_ai.py:predict` (Idempotency-Key 헤더 처리, 단계별 status 전이) | `Idempotency-Key` 헤더 *없으면* 기존 동작. *있으면* 같은 키 재호출 시 vLLM/CatBoost 재실행 0건. 모든 처리 try/except로 감싸 마이그레이션 미적용 환경에서도 깨지지 않음 |
+
+#### Phase 3 운영 적용 가이드
+
+```bash
+# ai_service Dockerfile rebuild가 필요 (alembic 추가됨)
+docker compose down
+docker compose up --build -d
+
+# 1) migrate 컨테이너가 db healthcheck 후 자동 실행 → alembic_version에 003 박힘
+docker compose logs migrate
+# 출력 예: "INFO  [alembic.runtime.migration] Running upgrade  -> 001"
+#         "INFO  [alembic.runtime.migration] Running upgrade 001 -> 002"
+#         "INFO  [alembic.runtime.migration] Running upgrade 002 -> 003"
+
+# 2) 새 마이그레이션 추가 시 (Phase 4 이후)
+docker compose exec ai_service alembic revision -m "phase4 X"
+# 파일 작성 후 재기동:
+docker compose up -d --build migrate ai_service
+
+# 3) §9.1 expand 옵트인 (선택)
+docker compose down
+# docker-compose.yml 의 USE_NORMALIZED_FEATURES, DUAL_WRITE_NORMALIZED 를 "1"로 변경
+docker compose up -d
+docker compose exec data python csv_to_db.py     # dual-write 시작
+
+# 4) §9.6 멱등성 사용 (선택)
+curl -X POST http://localhost:8002/predict \
+    -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: a1b2c3d4-2026-05-09-23rk3s' \
+    -d '{"uid":"23RK3S"}'
+# 같은 키로 재호출 시 vLLM 재실행 없이 캐시된 응답 반환
+
+# 5) 운영 점검 SQL
+DATABASE_URL=postgresql://biofit:biofitpass@localhost:5432/biofitdb \
+    jupyter nbconvert --to notebook --execute experiments/9_3_runs_audit.ipynb
+```
+
+#### Phase 4 prep — 다음 단계 (~1주, ~10시간)
+
+- **§9.4 vLLM health/fallback** — `/predict` 호출 전에 `GET /health` 점검. 다운 시 LLM 부분 건너뛰고 *CatBoost 예측 + SHAP만 카드로* 반환
+- **§9.8 OpenTelemetry trace + structlog + Prometheus** — `streamlit → data_service → ai_service → vLLM` 한 trace_id로 묶어 Grafana 대시보드
+- **§5.1 LLM 출력 JSON schema + 폴백** — `**summary**`/`**plan**` 마커 split이 깨질 때 자동 재시도 + 폴백 메시지
+
+이후 Phase 5 (within-subject 실험·주관·객관 격차)·Phase 6 (PIPA·OAuth·의료 면책)·Phase 7 (비즈니스 민감도)은 [`docs/project_analysis.md`](docs/project_analysis.md) §10 참조.
+
 ---
 
 ## Team

@@ -15,6 +15,12 @@ services:
       - ./db/init/feedback_sleep.csv:/feedback_sleep.csv
     ports:
       - "5432:5432"
+    # Phase 3 §9.7: migrate 컨테이너가 db ready를 기다리는 데 사용
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biofit -d biofitdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   streamlit:
     build:
@@ -43,6 +49,8 @@ services:
       - db
     environment:
       - DATABASE_URL=postgresql://biofit:biofitpass@db:5432/biofitdb
+      # Phase 3 §9.1 expand: 1=csv_to_db가 fitbit_daily_features에 dual-write, 0=기존 {uid}_*만 (default 0)
+      - DUAL_WRITE_NORMALIZED=0
     ports:
       - "8000:8001"
 
@@ -73,13 +81,33 @@ services:
     ports:
       - "8001:8001"
 
+  # Phase 3 §9.7: 1회성 마이그레이션 컨테이너. db healthcheck 후 alembic upgrade head 실행하고 종료.
+  # 새 마이그레이션이 추가되면 다음 docker compose up 시 자동 적용.
+  migrate:
+    build:
+      context: ./ai_service
+      dockerfile: Dockerfile
+    container_name: biofit-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    volumes:
+      - ./ai_service:/app
+
   ai_service:
-    build: 
+    build:
       context: ./ai_service
       dockerfile: Dockerfile
     container_name: biofit-ai-service
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
     environment:
@@ -88,6 +116,8 @@ services:
       WINDOW: 7
       OPENAI_BASE: http://10.38.38.40:8004/v1
       OPENAI_KEY: token-abc123
+      # Phase 3 §9.1 expand: 1=fitbit_daily_features에서 read, 0=기존 {uid}_* 테이블 (default 0 = 옵트아웃)
+      USE_NORMALIZED_FEATURES: "0"
 
     volumes:
       - ./ai_service:/app

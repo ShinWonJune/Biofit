@@ -24,6 +24,54 @@ CSV_DIR = Path("./fitbit_csv")  # FITBIT CSV가 이 위치에 저장됨
 # 여기서 uid는 CSV 내부 첫 번째 컬럼, 혹은 파일이름으로부터 파싱해야 함.
 # 하지만 우리는 00-CallAPI.py가 CSV 안에 user_id 컬럼을 이미 포함해서 만든다고 가정.
 
+
+# §9.1 expand dual-write — DUAL_WRITE_NORMALIZED=1 시 fitbit_daily_features에도 upsert.
+# 매핑 없는 fname(예: heart_rate_1min, activity_1min)은 분 단위 데이터라 dual-write 대상 아님.
+_DUAL_WRITE_COLUMN_MAP = {
+    "sleep_summary": ["efficiency", "stage_deep", "stage_light", "stage_rem", "stage_wake"],
+    "activity_sum":  ["steps", "distance", "calories"],
+    "resting_hr":    ["resting_hr"],
+    "azm":           ["azm_total", "azm_fatburn", "azm_cardio"],
+}
+
+
+def _maybe_dual_write_normalized(uid: str, fname: str, df: pd.DataFrame) -> None:
+    """DUAL_WRITE_NORMALIZED=1이면 일별 집계해 fitbit_daily_features에 upsert."""
+    if os.getenv("DUAL_WRITE_NORMALIZED", "0") != "1":
+        return
+
+    cols = _DUAL_WRITE_COLUMN_MAP.get(fname)
+    if cols is None or "date" not in df.columns:
+        return
+
+    keep = ["user_id", "date"] + [c for c in cols if c in df.columns]
+    if len(keep) <= 2:
+        logging.warning(f"[§9.1 dual-write] {uid}/{fname}: no expected cols present")
+        return
+
+    df_w = df[keep].copy()
+    df_w["date"] = pd.to_datetime(df_w["date"], errors="coerce").dt.date
+    df_w = df_w.dropna(subset=["date"])
+    df_agg = df_w.groupby(["user_id", "date"], as_index=False).mean(numeric_only=True)
+    if df_agg.empty:
+        return
+
+    cols_str   = ", ".join(df_agg.columns)
+    placeholders = ", ".join([f":{c}" for c in df_agg.columns])
+    update_str = ", ".join(
+        f"{c}=EXCLUDED.{c}" for c in df_agg.columns if c not in ("user_id", "date")
+    )
+    sql = sqlalchemy.text(
+        f"INSERT INTO fitbit_daily_features ({cols_str}) "
+        f"VALUES ({placeholders}) "
+        f"ON CONFLICT (user_id, date) DO UPDATE SET {update_str}"
+    )
+    with engine.begin() as conn:
+        for _, row in df_agg.iterrows():
+            conn.execute(sql, row.to_dict())
+    print(f">> [§9.1 dual-write] {uid}/{fname} → fitbit_daily_features ({len(df_agg)} rows upserted)")
+
+
 def load_raw_csv_to_db():
     for csv_path in CSV_DIR.glob("*.csv"):
         fname = csv_path.stem  # ex) "heart_rate_1min"
@@ -43,6 +91,8 @@ def load_raw_csv_to_db():
             chunksize=500
         )
         print(f">> Raw CSV '{csv_path.name}' → '{table_name}' ({len(df)} rows)")
+        # §9.1 expand opt-in: 일별 집계 컬럼은 fitbit_daily_features에도 upsert
+        _maybe_dual_write_normalized(uid, fname, df)
 
 if __name__ == "__main__":
     load_raw_csv_to_db()

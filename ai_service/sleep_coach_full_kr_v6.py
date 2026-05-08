@@ -76,7 +76,37 @@ def read_feedback_db(uid: str) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df.groupby(["user_id", "date"], as_index=False)["sleep_score"].mean()
 
+# §9.1 expand: table_suffix → fitbit_daily_features 컬럼 매핑.
+# USE_NORMALIZED_FEATURES=1일 때만 사용. 매핑 없으면 legacy 동적 테이블로 fallback.
+_NORMALIZED_COLUMN_MAP = {
+    "sleep_summary": ["efficiency", "stage_deep", "stage_light", "stage_rem", "stage_wake"],
+    "activity_sum":  ["steps", "distance", "calories"],
+    "resting_hr":    ["resting_hr"],
+    "azm":           ["azm_total", "azm_fatburn", "azm_cardio"],
+}
+
+
 def read_daily_db(table_suffix: str, agg: dict[str, str], uid: str) -> pd.DataFrame:
+    """일별 집계 데이터 조회.
+
+    §9.1 expand: USE_NORMALIZED_FEATURES=1이면 fitbit_daily_features에서,
+    아니면 기존 동적 `{uid}_{table_suffix}` 테이블에서 읽음 (default = legacy).
+    """
+    if os.getenv("USE_NORMALIZED_FEATURES", "0") == "1":
+        cols = _NORMALIZED_COLUMN_MAP.get(table_suffix)
+        if cols is not None:
+            df = read_table("fitbit_daily_features", where=f"user_id = '{uid}'")
+            keep = [c for c in cols if c in df.columns]
+            if not keep:
+                logger.warning(f"[§9.1] fitbit_daily_features missing all expected cols for suffix={table_suffix} → legacy fallback")
+            else:
+                df = df[KEYS + ["date"] + keep].copy()
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                return df.groupby(KEYS + ["date"], as_index=False).agg(agg)
+        else:
+            logger.info(f"[§9.1] no normalized mapping for suffix={table_suffix} → legacy fallback")
+
+    # legacy path (default)
     tbl = f"{uid}_{table_suffix}"
     df  = read_table(tbl, where=f"user_id = '{uid}'")
     df["date"] = pd.to_datetime(df["date"], errors="coerce")

@@ -121,7 +121,9 @@ docker compose up --build -d
 
 ---
 
-## Improvements (1주 보강 작업, 2026-05-08)
+## Improvements
+
+### Phase 1 (2026-05-08) — 모델 정직성
 
 `docs/project_analysis.md`의 27개 약점 중 *모델 정직성*에 가장 영향이 큰 3건을 1주(~10시간) 안에 처리한 결과:
 
@@ -168,6 +170,54 @@ curl -X POST http://localhost:8002/predict \
 DATABASE_URL=postgresql://biofit:biofitpass@localhost:5432/biofitdb \
     jupyter nbconvert --to notebook --execute experiments/8_1_leakage_audit.ipynb
 ```
+
+### Phase 2 (2026-05-08) — 시간대 회귀 + 메타 추적 + 평가 루프
+
+Phase 1 모델 정직성 위에 (1) 운동 시간대 추천이 LLM 환각이 아닌 *데이터 회귀*에서 나오도록, (2) 모든 추론 호출의 *모델·프롬프트 메타*를 추적, (3) 트레이너의 *코칭 품질 평가 루프*를 닫음:
+
+| § | 약점 | 변경 위치 | 검증 |
+|---|------|---------|------|
+| §8.2 | 운동 시간대를 LLM이 환각 (모든 회원 `20:00~20:30`) | `sleep_coach_full_kr_v6.py:recommend_workout_window` (효율 상위 30% 일자의 시간대별 활동 합계 → top-3 슬롯). 데이터 < 14일이면 cohort default `(18:00, 19:00)` fallback. LLM 프롬프트 시간 강제 라인이 회귀 결과를 *그대로 출력*하도록 변경. | [`experiments/8_2_window_regression.ipynb`](experiments/8_2_window_regression.ipynb) — 사용자 맞춤성·cohort 우위·fallback 가설 3개 |
+| §8.5 | 모델 버전·프롬프트 해시·LLM 파라미터 미기록 → 재현성 0 | `predictions` 테이블에 4 컬럼 추가 (`model_version`, `prompt_hash CHAR(8)`, `llm_params JSONB`, `recommended_slot_json JSONB`) — `db/init/008_predictions_meta.sql`. 호출 시점 `MODEL_VERSION` 상수 + `sha256(SYS_PROMPT + prompt)[:8]` + `llm_params` JSON 캡처 | predictions row 마다 위 메타 채워져 호출 단위 추적 가능 |
+| §8.3 | 코칭 메시지 품질 평가 신호 0 (closed loop 부재) | `predictions_feedback` 테이블 신규 (`db/init/009_predictions_feedback.sql`) — `(run_id, rating 1~5, useful, comment, rated_by)` + UNIQUE`(run_id, rated_by)`. `feedback_api`에 `POST /predictions/{run_id}/feedback` 신규 endpoint | curl 한 줄로 평가 적재. 1인 1회 강제, 외래키로 predictions 보장 |
+
+#### 사용 예시 (Phase 2 신규 endpoint)
+
+```bash
+# 트레이너 thumbs up/down
+curl -X POST http://localhost:8001/predictions/{run_id}/feedback \
+    -H 'Content-Type: application/json' \
+    -d '{"useful": true, "rated_by": "trainer-suh-01", "comment": "회원 만족도 높았음"}'
+
+# 회원 별점 (1~5)
+curl -X POST http://localhost:8001/predictions/{run_id}/feedback \
+    -H 'Content-Type: application/json' \
+    -d '{"rating": 4, "rated_by": "23RK3S"}'
+
+# rating·useful 둘 다 미입력 시 422 / 동일 rated_by 재호출 시 409 / 존재하지 않는 run_id면 404
+```
+
+#### Phase 2 운영 적용 가이드 (Phase 1 위에 누적)
+
+```bash
+# 새 init SQL을 운영 DB에 수동 적용 (첫 기동 시는 자동)
+docker compose exec db psql -U biofit -d biofitdb \
+    -f /docker-entrypoint-initdb.d/008_predictions_meta.sql
+docker compose exec db psql -U biofit -d biofitdb \
+    -f /docker-entrypoint-initdb.d/009_predictions_feedback.sql
+
+# 검증 노트북 (8_2_window_regression.ipynb)
+DATABASE_URL=postgresql://biofit:biofitpass@localhost:5432/biofitdb \
+    jupyter nbconvert --to notebook --execute experiments/8_2_window_regression.ipynb
+```
+
+#### Phase 3 prep — 다음 단계 (~2주, ~15시간 예산)
+
+- **§9.7 Alembic 도입** — `db/init/*.sql`은 첫 기동만 동작 → 운영 DB 스키마 변경 자동화. `migrate` 1회성 컨테이너 추가
+- **§9.1 통합 `fitbit_daily_features` (expand-contract의 expand 단계)** — 동적 `{uid}_*` 테이블이 회원 200명 시 1,800개. 정규화 wide-format 테이블 도입 + dual-write·dual-read 도입 (기존 테이블 *유지*하면서 점진 전환)
+- **§9.6 멱등성 키 + `model_runs` 상태 머신** — vLLM timeout 시 토큰 누수·predictions 누락 방지
+
+Phase 3 작업 시 본 Phase 2의 `predictions` 컬럼·`predictions_feedback` 테이블 모두 그대로 유지(외래키 호환).
 
 ---
 

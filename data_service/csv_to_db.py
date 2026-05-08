@@ -34,6 +34,13 @@ _DUAL_WRITE_COLUMN_MAP = {
     "azm":           ["azm_total", "azm_fatburn", "azm_cardio"],
 }
 
+# CSV 컬럼명 → fitbit_daily_features 컬럼명 rename map.
+# fitbit_daily_features는 wide-format이라 도메인 명확성을 위해 prefix(`azm_`)를 붙였지만,
+# Fitbit AZM CSV 헤더는 prefix 없이 (total, fatburn, cardio)로 와서 명시적 rename 필요.
+_DUAL_WRITE_COLUMN_RENAME = {
+    "azm": {"total": "azm_total", "fatburn": "azm_fatburn", "cardio": "azm_cardio"},
+}
+
 
 def _maybe_dual_write_normalized(uid: str, fname: str, df: pd.DataFrame) -> None:
     """DUAL_WRITE_NORMALIZED=1이면 일별 집계해 fitbit_daily_features에 upsert."""
@@ -44,12 +51,15 @@ def _maybe_dual_write_normalized(uid: str, fname: str, df: pd.DataFrame) -> None
     if cols is None or "date" not in df.columns:
         return
 
-    keep = ["user_id", "date"] + [c for c in cols if c in df.columns]
+    rename = _DUAL_WRITE_COLUMN_RENAME.get(fname)
+    df_src = df.rename(columns=rename) if rename else df
+
+    keep = ["user_id", "date"] + [c for c in cols if c in df_src.columns]
     if len(keep) <= 2:
         logging.warning(f"[§9.1 dual-write] {uid}/{fname}: no expected cols present")
         return
 
-    df_w = df[keep].copy()
+    df_w = df_src[keep].copy()
     df_w["date"] = pd.to_datetime(df_w["date"], errors="coerce").dt.date
     df_w = df_w.dropna(subset=["date"])
     df_agg = df_w.groupby(["user_id", "date"], as_index=False).mean(numeric_only=True)

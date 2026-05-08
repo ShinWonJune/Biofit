@@ -34,6 +34,9 @@ LEAK_VARS = [
 # Phase 1: leak fix + holdout. Phase 2: window regression replaces LLM hallucinated slot.
 MODEL_VERSION = "phase2_§8.2_window_regression"
 
+# vLLM에 등록된 model id. 환경변수로 override 가능 (서버마다 등록명 다름 — 예: ./llama3 vs openai/gpt-oss-20b).
+LLM_MODEL = os.getenv("LLM_MODEL_NAME", "openai/gpt-oss-20b")
+
 # §8.2 default cohort slot for cold-start members (< 14 train days).
 # Pulled from PPT/group_service hardcode (10:00–11:00, 18:00–19:00) — picks evening
 # as a safer default for sleep efficiency under most chronotypes.
@@ -425,7 +428,7 @@ client = OpenAI(
 def chat(uid: str, sys: str, user: str) -> tuple[str, int, int]:
     """content, prompt_tokens, completion_tokens 반환"""
     resp = client.chat.completions.create(
-        model="./llama3",
+        model=LLM_MODEL,
         temperature=0.3,
         top_p=0.30,
         max_tokens=1024,
@@ -533,7 +536,7 @@ def main(uid: str, model_path: Path, window: int) -> dict:   # §2.1: dict 반�
 
     # §8.5 모델·프롬프트 메타 추적 — 호출 시점 캡처해 predictions에 박제
     prompt_hash           = hashlib.sha256((SYS_PROMPT + prompt).encode("utf-8")).hexdigest()[:8]
-    llm_params            = {"model": "./llama3", "temperature": 0.3, "top_p": 0.30, "max_tokens": 1024}
+    llm_params            = {"model": LLM_MODEL, "temperature": 0.3, "top_p": 0.30, "max_tokens": 1024}
     recommended_slot_json = json.dumps(
         [{"start": s, "end": e} for s, e in recommended_slots],
         ensure_ascii=False

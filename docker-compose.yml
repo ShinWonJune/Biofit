@@ -1,14 +1,20 @@
 version: "3.9"
 
+# ─────────────────────────────────────────────────────────
+# 시크릿은 같은 디렉토리의 .env 파일에서 자동 로드됩니다.
+# .env 파일이 없으면 .env.example을 복사해 작성하세요.
+#   cp .env.example .env
+# ─────────────────────────────────────────────────────────
+
 services:
   db:
     image: postgres:13
     container_name: biofit-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: biofit
-      POSTGRES_PASSWORD: biofitpass
-      POSTGRES_DB: biofitdb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d # For initial SQL scripts
@@ -17,7 +23,7 @@ services:
       - "5432:5432"
     # Phase 3 §9.7: migrate 컨테이너가 db ready를 기다리는 데 사용
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U biofit -d biofitdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,7 +38,12 @@ services:
       - data
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      DATABASE_URL: ${DATABASE_URL}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       DATA_SERVICE_URL: http://data:8001/fetch
       AI_URL: http://ai_service:8000/predict
       GROUP_URL: http://group_service:8003/predict
@@ -53,7 +64,7 @@ services:
     depends_on:
       - db
     environment:
-      - DATABASE_URL=postgresql://biofit:biofitpass@db:5432/biofitdb
+      - DATABASE_URL=${DATABASE_URL}
       # Phase 3 §9.1 expand: 1=csv_to_db가 fitbit_daily_features에 dual-write, 0=기존 {uid}_*만 (default 0)
       - DUAL_WRITE_NORMALIZED=0
     ports:
@@ -82,7 +93,7 @@ services:
     depends_on:
       - db
     environment:
-      - DATABASE_URL=postgresql://biofit:biofitpass@db:5432/biofitdb
+      - DATABASE_URL=${DATABASE_URL}
     ports:
       - "8001:8001"
 
@@ -97,7 +108,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      DATABASE_URL: ${DATABASE_URL}
     command: ["alembic", "upgrade", "head"]
     restart: "no"
     volumes:
@@ -116,13 +127,13 @@ services:
     restart: unless-stopped
 
     environment:
-      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      DATABASE_URL: ${DATABASE_URL}
       MODEL_PATH: /app/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf
       WINDOW: 7
-      OPENAI_BASE: http://10.38.38.40:8004/v1
-      OPENAI_KEY: token-abc123
+      OPENAI_BASE: ${OPENAI_BASE}
+      OPENAI_KEY: ${OPENAI_KEY}
       # vLLM에 등록된 model id (서버마다 다름. ./llama3 또는 openai/gpt-oss-20b 등)
-      LLM_MODEL_NAME: openai/gpt-oss-20b
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME}
       # Phase 3 §9.1 expand: 1=fitbit_daily_features에서 read, 0=기존 {uid}_* 테이블 (default 0 = 옵트아웃)
       USE_NORMALIZED_FEATURES: "0"
       # Phase 4 §9.1 contract: HTTP API 경유 (1=data_service /users/{uid}/features, 0=DB 직접)
@@ -130,9 +141,15 @@ services:
       USE_FEEDBACK_API_HTTP: "0"
       DATA_SERVICE_BASE: "http://data:8001"
       FEEDBACK_API_BASE: "http://feedback-api:8001"
+      # Phase D — 1=PSQI 4 모델 + Forward Simulation 추천 LLM 프롬프트 통합, 0=기존 단일 모델 (default)
+      USE_PSQI_FORWARD_SIM: "0"
 
     volumes:
       - ./ai_service:/app
+      # Phase B 검증 환경 — experiments 스크립트와 학습 데이터가 컨테이너에서 보이도록 마운트
+      - ./experiments:/experiments
+      - ./JG-Data:/JG-Data:ro
+      - ./db/init:/db/init:ro
 
     ports:
       - "8002:8000"
@@ -147,7 +164,7 @@ services:
     restart: unless-stopped
 
     environment:
-      DATABASE_URL: postgresql://biofit:biofitpass@db:5432/biofitdb
+      DATABASE_URL: ${DATABASE_URL}
 
     volumes:
       - ./group_service:/app

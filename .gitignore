@@ -1,3 +1,44 @@
 models/
 data_service/fitbit_csv/
 llama3/
+.venv-cat/
+experiments/output/
+
+# Data and logs
+JG-Data*/
+*.zip
+catboost_info/
+
+# OS and sync files
+@eaDir/
+__MACOSX/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# AI agents
+.claude/
+.omc/
+.omx/
+.agents/
+.codex
+CLAUDE.md
+AGENTS.md
+
+#docs
+phase4*
+
+#PROJECT files
+analysis/
+프로젝트구조.md
+체감점수_피처_설계_논의.md
+project_deep_understanding.md
+resume_summary.md
+personal_analysis.py
+# experiments는 commit 대상이지만 학습 산출물은 ignore
+experiments/output/
+2025-C&S Project_Final_Team G-refine.pptx
+docker_error.md
